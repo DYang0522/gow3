@@ -189,6 +189,52 @@ else()
     target_link_libraries(spartanportgpu PUBLIC PkgConfig::X11)
 endif()
 
+# Bloodborne port layer: build a second GPU shim over the same tested GOW3/shadPS4
+# core. Keep spartanportgpu untouched; bbgpu supplies Bloodborne's game-facing HLE
+# and UI while reusing the R9 290X-compatible renderer and shader recompiler.
+set(BB_PORT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../port/bloodborne")
+set(BB_BASE_SHIM_SOURCES ${SHIM_SOURCES})
+list(FILTER BB_BASE_SHIM_SOURCES EXCLUDE REGEX "spartanportgpu\\.cpp$")
+file(GLOB_RECURSE BB_PORT_SHIM_SOURCES CONFIGURE_DEPENDS
+    "${BB_PORT_DIR}/gpu/shim/*.cpp")
+add_library(bbgpu ${SPARTANGPU_KIND} ${VIDEO_CORE} ${RECOMPILER} ${COMMON}
+    ${BB_BASE_SHIM_SOURCES} ${BB_PORT_SHIM_SOURCES}
+    "${BB_PORT_DIR}/gpu/bbnet_stub.cpp"
+    shadps4/core/libraries/gnmdriver/gnmdriver.cpp
+    shadps4/core/libraries/videoout/driver.cpp shadps4/core/libraries/videoout/video_out.cpp
+    shadps4/core/libraries/kernel/equeue.cpp ${AVPLAYER}
+    shadps4/core/libraries/videodec/video_utils.cpp)
+add_dependencies(bbgpu host_shaders)
+target_sources(bbgpu PRIVATE third_party/imgui/imgui.cpp third_party/imgui/imgui_draw.cpp
+    third_party/imgui/imgui_tables.cpp third_party/imgui/imgui_widgets.cpp
+    third_party/imgui/backends/imgui_impl_vulkan.cpp)
+target_include_directories(bbgpu PRIVATE third_party/imgui third_party/imgui/backends)
+target_compile_definitions(bbgpu PRIVATE IMGUI_IMPL_VULKAN_NO_PROTOTYPES
+    SPARTAN_FONT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/DejaVuSans.ttf"
+    BB_FONT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/DejaVuSans.ttf")
+set_source_files_properties("${BB_PORT_DIR}/gpu/shim/bbport_overlay.cpp" PROPERTIES
+    OBJECT_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/DejaVuSans.ttf)
+target_include_directories(bbgpu PRIVATE shim shadps4 ${SHADER_INCLUDE}
+    third_party/gcn/include third_party/half/include third_party/imgui
+    "${BB_PORT_DIR}/gpu" "${BB_PORT_DIR}/gpu/shim")
+target_compile_definitions(bbgpu PRIVATE BOOST_ASIO_STANDALONE NDEBUG)
+target_compile_options(bbgpu PRIVATE -Wno-deprecated-declarations -Wno-missing-field-initializers)
+if (NOT WIN32)
+    target_link_options(bbgpu PRIVATE -Wl,--allow-shlib-undefined)
+endif()
+target_link_libraries(bbgpu PRIVATE ffx-vulkan::portable ffx-vulkan::fsr4-v07-vulkan)
+target_link_libraries(bbgpu PUBLIC Vulkan::Headers fmt::fmt Boost::headers magic_enum::magic_enum
+    tsl::robin_map GPUOpen::VulkanMemoryAllocator PkgConfig::XXHASH PkgConfig::SDL3
+    PkgConfig::FFMPEG miniz::miniz Zydis::Zydis sirit)
+target_include_directories(bbgpu PRIVATE third_party/xbyak)
+if (WIN32)
+    target_compile_definitions(bbgpu PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_compile_options(bbgpu PRIVATE -include ${BB_PORT_DIR}/gpu/shim/bb_win_compat.h)
+    target_link_libraries(bbgpu PUBLIC Vulkan::Vulkan ws2_32 bcrypt ntdll synchronization winmm pdh)
+else()
+    target_link_libraries(bbgpu PUBLIC PkgConfig::X11)
+endif()
+
 # spartanport (Windows): spartanportgpu is a static library there, so the loader and the HLE runtime are
 # linked here, where CMake knows its dependencies (build.sh builds them with ninja).
 if (WIN32)
