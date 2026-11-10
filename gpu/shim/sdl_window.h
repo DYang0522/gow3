@@ -23,6 +23,12 @@ struct WindowSystemInfo {
 /// clicking in the window takes it back (any thread).
 void ToggleMousePause();
 
+struct MouseInput {
+    float dx{}, dy{};
+    u32 buttons{}, wheel{};
+    bool captured{};
+};
+
 class WindowSDL {
 public:
     WindowSDL(s32 width, s32 height, const char* title);
@@ -30,6 +36,10 @@ public:
     s32 GetWidth() const { return width.load(std::memory_order_relaxed); }
     s32 GetHeight() const { return height.load(std::memory_order_relaxed); }
     bool IsMinimized() const;
+    bool IsFocused() const;
+    void TakeMouseInput(MouseInput& input);
+    void ConfigureInput(bool mouse_mode_available, s32 toggle_scancode, s32 reload_scancode);
+    bool TakeInputReloadRequested();
     SDL_Window* GetSDLWindow() const { return window; }
     WindowSystemInfo GetWindowInfo() const { return window_info; }
     bool IsOpen() const { return is_open.load(std::memory_order_relaxed); }
@@ -49,6 +59,9 @@ private:
     int display_mode = -1; ///< applied SpartanSettings display mode (window thread)
     bool mouse_locked = false; ///< relative mouse mode on (window thread)
     bool cursor_shown = false; ///< the system cursor is visible (window thread)
+    bool mouse_mode_available{}, mouse_mode_enabled{}, input_reload_requested{};
+    s32 mouse_toggle_scancode{}, input_reload_scancode{};
+    float mouse_dx{}, mouse_dy{}, wheel_x{}, wheel_y{};
     void ApplyDisplayMode(int mode);
     int text_state{};
     std::string text, text_prompt, base_title;
