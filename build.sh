@@ -73,7 +73,7 @@ cmake -S gpu -B out/gpu -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DSPARTAN_PGO
     -DSPARTAN_LTO="${SPARTAN_LTO:-ON}" -DSPARTAN_PGO_DIR="$PWD/pgo" >/dev/null
 echo "GPU library: PGO $pgo, LTO ${SPARTAN_LTO:-ON}"
 # A failed GPU build must stop here: an older libspartanportgpu.so would otherwise be used silently.
-if ! ninja -C out/gpu spartanportgpu > out/gpu-build.log 2>&1; then
+if ! ninja -C out/gpu spartanportgpu bbgpu > out/gpu-build.log 2>&1; then
     grep -v '^\[' out/gpu-build.log | tail -40 >&2
     echo 'GPU library build failed (full log: out/gpu-build.log)' >&2; exit 1
 fi
@@ -91,6 +91,16 @@ fi
 "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -mgeneral-regs-only -c src/isa_emulate.c -o out/isa_emulate.o
 "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -pthread -no-pie "${includes[@]}" -I. -Isrc src/probe.c "${runtime[@]}" src/cpu_check.c src/vulkan_smoke.c out/isa_emulate.o src/isa_rewrite.c out/libatrac9.a -lm "${gpu[@]}" "${libraries[@]}" -o out/spartanport-probe
 echo "Built $PWD/out/spartanport-probe"
+
+# Bloodborne uses its own game-facing HLE runtime and GPU shim over the same GOW3 renderer.
+bb_runtime=(port/bloodborne/src/runtime*.c)
+bb_gpu=(-Lout/gpu -lbbgpu -Wl,-rpath,'$ORIGIN/gpu' -Wl,-rpath,"$PWD/out/gpu" -rdynamic)
+"$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -pthread -no-pie "${includes[@]}" \
+    -I. -Isrc -Iport/bloodborne -Iport/bloodborne/src \
+    port/bloodborne/src/probe_isa.c "${bb_runtime[@]}" src/cpu_check.c \
+    port/bloodborne/src/vulkan_smoke.c out/isa_emulate.o src/isa_rewrite.c \
+    out/libatrac9.a -lm "${bb_gpu[@]}" "${libraries[@]}" -o out/bb-probe
+echo "Built $PWD/out/bb-probe"
 # GPU check for run.sh (live_resolution=auto): links only the Vulkan loader.
 "$CC" -std=c11 -O2 -Wall -Wextra -Werror -Igpu/shadps4 tools/gpu_capabilities.c "${libraries[@]}" -o out/spartanport-gpu-capabilities
 if [[ ${1:-} == --test ]]; then
