@@ -16,9 +16,9 @@
 #include "bbport_overlay.h"
 #else
 #include "spartanport_overlay.h"
+#endif
 #include "spartanport_settings.h"
 #include "spartanport_graphics.h"
-#endif
 #include "video_core/renderer_vulkan/vk_temporal_upscaler.h"
 #include "video_core/renderer_vulkan/vk_presenter.h"
 #include "video_core/renderer_vulkan/vk_warmup_inbox.h"
