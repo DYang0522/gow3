@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <utility>
 #include <SDL3/SDL.h>
 #include "common/assert.h"
 #include "common/logging/log.h"
@@ -172,6 +173,45 @@ WindowSDL::~WindowSDL() {
     SDL_DestroyWindow(window);
 }
 
+bool WindowSDL::IsFocused() const {
+    return window && (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS);
+}
+
+void WindowSDL::TakeMouseInput(MouseInput& input) {
+    input = {};
+    const bool focused = IsFocused();
+    input.captured = mouse_mode_available && mouse_mode_enabled && focused && !text_active &&
+                     !SpartanOverlay::CapturesInput();
+    if (!input.captured) {
+        mouse_dx = mouse_dy = wheel_x = wheel_y = 0.0f;
+        return;
+    }
+    input.dx = std::exchange(mouse_dx, 0.0f);
+    input.dy = std::exchange(mouse_dy, 0.0f);
+    const Uint32 buttons = SDL_GetMouseState(nullptr, nullptr);
+    for (int button = SDL_BUTTON_LEFT; button <= SDL_BUTTON_X2; ++button) {
+        if (buttons & SDL_BUTTON_MASK(button)) input.buttons |= 1u << (button - SDL_BUTTON_LEFT);
+    }
+    if (wheel_y > 0) input.wheel |= 1u;
+    if (wheel_y < 0) input.wheel |= 2u;
+    if (wheel_x < 0) input.wheel |= 4u;
+    if (wheel_x > 0) input.wheel |= 8u;
+    wheel_x = wheel_y = 0.0f;
+}
+
+void WindowSDL::ConfigureInput(bool available, s32 toggle_scancode, s32 reload_scancode) {
+    mouse_mode_available = available;
+    mouse_toggle_scancode = toggle_scancode;
+    input_reload_scancode = reload_scancode;
+    if (!available) mouse_mode_enabled = false;
+}
+
+bool WindowSDL::TakeInputReloadRequested() {
+    const bool requested = input_reload_requested;
+    input_reload_requested = false;
+    return requested;
+}
+
 void WindowSDL::BeginTextInput(const std::string& initial, const std::string& prompt) {
     std::scoped_lock lock{text_mutex};
     text = initial;
@@ -240,6 +280,25 @@ bool WindowSDL::PollEvents() {
         }
         if (SpartanOverlay::HandleEvent(event)) {
             continue;
+        }
+        if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
+            if (mouse_mode_available && mouse_toggle_scancode > 0 &&
+                event.key.scancode == mouse_toggle_scancode) {
+                mouse_mode_enabled = !mouse_mode_enabled;
+                mouse_dx = mouse_dy = wheel_x = wheel_y = 0.0f;
+                continue;
+            }
+            if (input_reload_scancode > 0 && event.key.scancode == input_reload_scancode) {
+                input_reload_requested = true;
+                continue;
+            }
+        }
+        if (event.type == SDL_EVENT_MOUSE_MOTION && mouse_mode_available && mouse_mode_enabled) {
+            mouse_dx += event.motion.xrel;
+            mouse_dy += event.motion.yrel;
+        } else if (event.type == SDL_EVENT_MOUSE_WHEEL && mouse_mode_available && mouse_mode_enabled) {
+            wheel_x += event.wheel.x;
+            wheel_y += event.wheel.y;
         }
         switch (event.type) {
         case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
