@@ -65,6 +65,14 @@ void NoteInputPump() {
 }
 } // namespace
 
+// Shared VideoOut timing hook normally supplied by spartanportgpu.cpp. The Bloodborne
+// library has its own entry point, so provide the same display-refresh query here.
+u32 SpartanDisplayRefreshHz() {
+    const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetPrimaryDisplay());
+    const u32 hz = mode && mode->refresh_rate > 0 ? u32(mode->refresh_rate + 0.5f) : 60;
+    return std::max<u32>(hz, 60);
+}
+
 extern "C" void bbgpu_input_note_read(void) {
     if (!InputLog()) {
         return;
