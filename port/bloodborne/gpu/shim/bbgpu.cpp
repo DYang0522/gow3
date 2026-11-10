@@ -168,22 +168,14 @@ void MemoryManager::SetRasterizer(Vulkan::Rasterizer* rasterizer_) {
 void MemoryManager::InvalidateMemory(VAddr address, u64 size) {
     if (rasterizer) rasterizer->InvalidateMemory(address, size);
 }
-bool MemoryManager::IsValidMapping(VAddr virtual_addr, u64 size) {
-    return runtime_memory_is_mapped(virtual_addr, size) != 0;
-}
 u64 MemoryManager::ClampRangeSize(VAddr virtual_addr, u64 size) {
     return runtime_memory_clamp(virtual_addr, size);
 }
 static void CopySparseSerial(VAddr source, u8* dest, u64 size) {
-    // BB_READBACKS=2 protects GPU-written pages against reads: the copy threads and recorders
-    // read through the backing view, as a read fault on them would wait for the GPU thread,
-    // which waits for them.
-    static const bool precise =
-        EmulatorSettings.GetReadbacksMode() == GpuReadbacksMode::Precise;
-    if (precise) {
-        runtime_memory_read_backing(source, dest, size);
-        return;
-    }
+    // Always read through the unprotected backing view. GPU page tracking can otherwise
+    // fault this CPU read and wait on the GPU thread that is waiting for the copy worker.
+    runtime_memory_read_backing(source, dest, size);
+    return;
     while (size) {
         uintptr_t start = 0, end = 0;
         int mapped = 0;
