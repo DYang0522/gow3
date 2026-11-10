@@ -59,9 +59,9 @@ private:
     int display_mode = -1; ///< applied SpartanSettings display mode (window thread)
     bool mouse_locked = false; ///< relative mouse mode on (window thread)
     bool cursor_shown = false; ///< the system cursor is visible (window thread)
-    bool mouse_mode_available{}, mouse_mode_enabled{}, input_reload_requested{};
-    s32 mouse_toggle_scancode{}, input_reload_scancode{};
-    float mouse_dx{}, mouse_dy{}, wheel_x{}, wheel_y{};
+    std::atomic<bool> mouse_mode_available{}, mouse_mode_enabled{}, input_reload_requested{};
+    std::atomic<s32> mouse_toggle_scancode{}, input_reload_scancode{};
+    std::atomic<float> mouse_dx{}, mouse_dy{}, wheel_x{}, wheel_y{};
     void ApplyDisplayMode(int mode);
     int text_state{};
     std::string text, text_prompt, base_title;
