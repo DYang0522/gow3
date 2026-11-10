@@ -1,0 +1,100 @@
+/* C interface of the GPU library (gpu/): shadPS4's Liverpool/Vulkan video core,
+ * GnmDriver, VideoOut and kernel event queues, adapted to the native loader. */
+#ifndef BBGPU_H
+#define BBGPU_H
+#include <stdint.h>
+#ifdef __cplusplus
+extern "C" {
+#endif
+typedef struct {
+    const char *title;          /* window title */
+    const char *serial;         /* CUSA id, names the pipeline cache */
+    const char *user_dir;       /* pipeline cache/logs directory */
+    uint32_t sdk_version;       /* from the eboot's procparam */
+    uint32_t psf_attributes;    /* param.sfo ATTRIBUTE */
+    int32_t width, height;      /* initial window size */
+} BbGpuConfig;
+/* Registers kernel event queues (needed with or without graphics). */
+void bbgpu_register_kernel(void);
+/* Co-op: the game folder and param.sfo identity for the network and PSN libraries. */
+void bbnet_configure(const char *app0, const char *serial, const char *title, const char *app_ver);
+/* The online session's start (bbnet/bbnet_glue.cpp). */
+void bbnet_initialize(void);
+/* Creates window, Vulkan device, presenter and GPU command processor. */
+int bbgpu_init(const BbGpuConfig *config);
+/* Function for an imported NID ("NID#lib#mod"), or 0 when the GPU library does not provide it. */
+uintptr_t bbgpu_resolve(const char *scoped_nid);
+/* Called first by the loader's SIGSEGV handler: 1 when a GPU page-tracking fault was handled. */
+int bbgpu_handle_fault(void *ucontext, void *address);
+/* BB_WRITE_LOG=1: prints the logged GPU-side writes to guest memory near the fault. */
+void bbgpu_dump_guest_writes(void *ucontext);
+/* Keyboard text entry through the game window (IME dialog). begin returns 0 when
+ * no window exists; poll returns 0 typing, 1 confirmed, 2 cancelled (UTF-8 text). */
+int bbgpu_text_input_begin(const char *initial_utf8, const char *prompt_utf8);
+int bbgpu_text_input_poll(char *out_utf8, uint64_t size);
+/* 1 while the in-game settings menu is open: the game's pad input is held neutral. */
+int bbgpu_overlay_captures_input(void);
+/* PC Settings in the game's System menu (gpu/shim/bbport_pc_menu.cpp, scripts/pc_menu.py): the
+ * game image, then its System menu's request for the line ("bb:o"); `list` points at the menu's
+ * line list, which the call may replace. */
+void bbgpu_pc_menu_set_image(unsigned char *base);
+/* After the patches, while the code is still writable: the PC page's name table. */
+void bbgpu_pc_menu_prepare(unsigned char *base);
+int bbgpu_pc_menu_add_line(void *list);
+int bbgpu_pc_menu_hide(void *movie);
+/* The settings pages' Defaults button (Restart Game on the PC page): its texts ("bb:l" name and
+ * help, "bb:r" question) and its Yes ("bb:y", 1 when the port took it). */
+int bbgpu_pc_menu_button_text(void *page);
+int bbgpu_pc_menu_question(void *page);
+int bbgpu_pc_menu_yes(void *page);
+/* 1 while the game should be silent: bbport.ini mute_unfocused is on and the window does not
+ * have focus. Safe from any thread (the audio ports read it for every buffer). */
+int bbgpu_audio_muted(void);
+/* A trophy the game just unlocked for the first time (0 = platinum): the in-game notice, as the
+ * console shows it (gpu/shim/bbport_overlay.cpp). Safe from any thread, also without a window. */
+void bbgpu_trophy_unlocked(int id);
+/* Button prompts (gpu/shim/bbport_prompts.cpp): what each of the game's key-guide icons shows
+ * on keyboard and mouse, one string per icon in bbport_prompt_icons.h's order ("e",
+ * "lshift+leftbutton", "w a s d", "mouse", "" for nothing). Draws them; safe from any thread. */
+/* The controller button each key-guide icon's action is bound to (input.ini names, "" for the
+ * game's own), in the same order: the controller prompts follow rebinding. */
+void bbgpu_prompts_configure_pad(const char *const *buttons, int count);
+void bbgpu_prompts_configure(const char *const *inputs, int count);
+
+/* Mouse input accumulated by the window thread since the last call; the call resets the
+ * motion (dx/dy) but not held buttons. All zero (and captured=0) while capture is inactive
+ * (mouse_to_joystick absent or off, no window focus, menu or text entry open). buttons uses
+ * SDL_BUTTON_MASK() bits (bit 0 = SDL_BUTTON_LEFT, ...), NOT the SDL_BUTTON_* index runtime_
+ * input_config.c stores for a mouse_left/mouse_right/... binding -- convert with
+ * SDL_BUTTON_MASK(value) before comparing. wheel bit 0 up, 1 down, 2 left, 3 right: a 33 ms
+ * pulse per step (MOU-007), already decayed by the time this call sees it.
+ * See specs/keyboard-and-mouse/spec-design-keyboard-mouse-input.md section 4.5 (API-002). */
+typedef struct {
+    float dx, dy;
+    uint32_t buttons;
+    uint32_t wheel;
+    int32_t captured;
+    int32_t locked_on; /* the direct mouse camera sees a lock-on target (motion reaches dx/dy) */
+} BbMouseInput;
+void bbgpu_mouse_take(BbMouseInput *out);
+/* Applies a just-(re)loaded input.ini to the window thread: whether mouse-to-joystick mode
+ * exists at all (mouse_mode_available; MOU-001), and the current toggle/reload hotkey
+ * scancodes (SDL_SCANCODE_UNKNOWN = none bound; HOT-002). Safe from any thread; takes effect
+ * on the window thread's next PollEvents. */
+void bbgpu_input_configure(int mouse_mode_available, int32_t toggle_scancode, int32_t reload_scancode);
+/* 1 once after the reload hotkey (default F8) was pressed, then clears back to 0 -- the pad
+ * thread polls this once per sample() (CFG-008) to know when to re-read input.ini. 0 if no
+ * window exists yet. */
+int bbgpu_input_reload_requested(void);
+/* Direct mouse camera (mouse_camera = direct in input.ini): whether it is wanted, its
+ * sensitivity multiplier, and the motion's per-axis multipliers (input_mouse_scale_x/_y: -1 to
+ * invert, the vertical sensitivity) and whether the drawn position turns too (mouse_camera_sync).
+ * Safe from any thread; applied on the window thread's next
+ * PollEvents. */
+void bbgpu_mouse_camera_configure(int direct, float sensitivity, float scale_x, float scale_y, int sync);
+/* Number of symbols registered by the vendored libraries (diagnostics). */
+unsigned bbgpu_symbol_count(void);
+#ifdef __cplusplus
+}
+#endif
+#endif
