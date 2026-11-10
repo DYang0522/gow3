@@ -180,35 +180,39 @@ bool WindowSDL::IsFocused() const {
 void WindowSDL::TakeMouseInput(MouseInput& input) {
     input = {};
     const bool focused = IsFocused();
-    input.captured = mouse_mode_available && mouse_mode_enabled && focused && !text_active &&
+    bool typing;
+    {
+        std::scoped_lock lock{text_mutex};
+        typing = text_active;
+    }
+    input.captured = mouse_mode_available.load() && mouse_mode_enabled.load() && focused && !typing &&
                      !SpartanOverlay::CapturesInput();
     if (!input.captured) {
-        mouse_dx = mouse_dy = wheel_x = wheel_y = 0.0f;
+        mouse_dx.store(0.0f); mouse_dy.store(0.0f); wheel_x.store(0.0f); wheel_y.store(0.0f);
         return;
     }
-    input.dx = std::exchange(mouse_dx, 0.0f);
-    input.dy = std::exchange(mouse_dy, 0.0f);
+    input.dx = mouse_dx.exchange(0.0f);
+    input.dy = mouse_dy.exchange(0.0f);
     const Uint32 buttons = SDL_GetMouseState(nullptr, nullptr);
     for (int button = SDL_BUTTON_LEFT; button <= SDL_BUTTON_X2; ++button) {
         if (buttons & SDL_BUTTON_MASK(button)) input.buttons |= 1u << (button - SDL_BUTTON_LEFT);
     }
-    if (wheel_y > 0) input.wheel |= 1u;
-    if (wheel_y < 0) input.wheel |= 2u;
-    if (wheel_x < 0) input.wheel |= 4u;
-    if (wheel_x > 0) input.wheel |= 8u;
-    wheel_x = wheel_y = 0.0f;
+    const float wx = wheel_x.exchange(0.0f), wy = wheel_y.exchange(0.0f);
+    if (wy > 0) input.wheel |= 1u;
+    if (wy < 0) input.wheel |= 2u;
+    if (wx < 0) input.wheel |= 4u;
+    if (wx > 0) input.wheel |= 8u;
 }
 
 void WindowSDL::ConfigureInput(bool available, s32 toggle_scancode, s32 reload_scancode) {
-    mouse_mode_available = available;
-    mouse_toggle_scancode = toggle_scancode;
-    input_reload_scancode = reload_scancode;
-    if (!available) mouse_mode_enabled = false;
+    mouse_mode_available.store(available);
+    mouse_toggle_scancode.store(toggle_scancode);
+    input_reload_scancode.store(reload_scancode);
+    if (!available) mouse_mode_enabled.store(false);
 }
 
 bool WindowSDL::TakeInputReloadRequested() {
-    const bool requested = input_reload_requested;
-    input_reload_requested = false;
+    const bool requested = input_reload_requested.exchange(false);
     return requested;
 }
 
@@ -282,23 +286,23 @@ bool WindowSDL::PollEvents() {
             continue;
         }
         if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
-            if (mouse_mode_available && mouse_toggle_scancode > 0 &&
-                event.key.scancode == mouse_toggle_scancode) {
-                mouse_mode_enabled = !mouse_mode_enabled;
-                mouse_dx = mouse_dy = wheel_x = wheel_y = 0.0f;
+            if (mouse_mode_available.load() && mouse_toggle_scancode.load() > 0 &&
+                event.key.scancode == mouse_toggle_scancode.load()) {
+                mouse_mode_enabled.store(!mouse_mode_enabled.load());
+                mouse_dx.store(0.0f); mouse_dy.store(0.0f); wheel_x.store(0.0f); wheel_y.store(0.0f);
                 continue;
             }
-            if (input_reload_scancode > 0 && event.key.scancode == input_reload_scancode) {
-                input_reload_requested = true;
+            if (input_reload_scancode.load() > 0 && event.key.scancode == input_reload_scancode.load()) {
+                input_reload_requested.store(true);
                 continue;
             }
         }
-        if (event.type == SDL_EVENT_MOUSE_MOTION && mouse_mode_available && mouse_mode_enabled) {
-            mouse_dx += event.motion.xrel;
-            mouse_dy += event.motion.yrel;
-        } else if (event.type == SDL_EVENT_MOUSE_WHEEL && mouse_mode_available && mouse_mode_enabled) {
-            wheel_x += event.wheel.x;
-            wheel_y += event.wheel.y;
+        if (event.type == SDL_EVENT_MOUSE_MOTION && mouse_mode_available.load() && mouse_mode_enabled.load()) {
+            mouse_dx.fetch_add(event.motion.xrel);
+            mouse_dy.fetch_add(event.motion.yrel);
+        } else if (event.type == SDL_EVENT_MOUSE_WHEEL && mouse_mode_available.load() && mouse_mode_enabled.load()) {
+            wheel_x.fetch_add(event.wheel.x);
+            wheel_y.fetch_add(event.wheel.y);
         }
         switch (event.type) {
         case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
@@ -355,7 +359,8 @@ bool WindowSDL::PollEvents() {
     // another window or the game's pause menu (the pause key) get it back. Taken back, it starts
     // at the window's centre; let go by the pause key, the system cursor shows.
     const bool paused = mouse_paused.load(std::memory_order_relaxed);
-    const bool lock = SpartanSettings::Get().mouse_lock.load(std::memory_order_relaxed) && !text_active && !paused &&
+    const bool lock = (SpartanSettings::Get().mouse_lock.load(std::memory_order_relaxed) ||
+                       (mouse_mode_available.load() && mouse_mode_enabled.load())) && !text_active && !paused &&
                       !SpartanOverlay::CapturesInput() && (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS);
     if (lock != mouse_locked) {
         if (lock) SDL_WarpMouseInWindow(window, width / 2.0f, height / 2.0f);
