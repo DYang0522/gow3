@@ -1,0 +1,41 @@
+name: Bloodborne Port Build
+
+on:
+  push:
+    branches: [bloodborne-port-r9-290x]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bloodborne-port-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Dependencies
+        run: bash packaging/linux/ci-deps.sh
+
+      - name: Build GOW3 base and Bloodborne port
+        run: bash build.sh --test
+
+      - name: Check Bloodborne probe CPU reporting
+        run: out/bb-probe --cpu-features
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bloodborne-port-native-x86_64
+          path: |
+            out/bb-probe
+            out/gpu/libbbgpu.so
+            out/spartanport-probe
+            out/gpu/libspartanportgpu.so
+          if-no-files-found: error
