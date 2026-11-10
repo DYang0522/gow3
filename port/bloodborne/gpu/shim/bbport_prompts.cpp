@@ -20,6 +20,8 @@
 #include "bbport_settings.h"
 #include "core/memory.h"
 
+extern "C" int runtime_memory_is_mapped(uintptr_t address, uint64_t size);
+
 extern "C" const unsigned char bb_font_ttf[]; // bbport_overlay.cpp
 
 namespace BbPrompts {
@@ -309,7 +311,7 @@ void Apply() {
     std::vector<std::tuple<uintptr_t, int, uint64_t>> written; // hash 0: the entry is gone
     for (const Entry& e : snapshot) {
         const auto [start, length] = Range(e.base, e.sprite);
-        if (!memory->IsValidMapping(start, length) || Hash(Gather(e.base, e.sprite)) != e.written) {
+        if (!runtime_memory_is_mapped(start, length) || Hash(Gather(e.base, e.sprite)) != e.written) {
             written.emplace_back(e.base, e.sprite, 0); // unmapped, or the game put something else there
             continue;
         }
