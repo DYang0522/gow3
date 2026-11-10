@@ -217,7 +217,7 @@ set_source_files_properties("${BB_PORT_DIR}/gpu/shim/bbport_overlay.cpp" PROPERT
 target_include_directories(bbgpu PRIVATE shim shadps4 ${SHADER_INCLUDE}
     third_party/gcn/include third_party/half/include third_party/imgui
     "${BB_PORT_DIR}/gpu" "${BB_PORT_DIR}/gpu/shim")
-target_compile_definitions(bbgpu PRIVATE BOOST_ASIO_STANDALONE NDEBUG)
+target_compile_definitions(bbgpu PRIVATE BOOST_ASIO_STANDALONE NDEBUG BB_PORT_BUILD)
 target_compile_options(bbgpu PRIVATE -Wno-deprecated-declarations -Wno-missing-field-initializers)
 if (NOT WIN32)
     target_link_options(bbgpu PRIVATE -Wl,--allow-shlib-undefined)

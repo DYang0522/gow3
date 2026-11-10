@@ -12,9 +12,13 @@
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/renderdoc.h"
 #include "video_core/renderer_vulkan/vk_platform.h"
+#ifdef BB_PORT_BUILD
+#include "bbport_overlay.h"
+#else
 #include "spartanport_overlay.h"
 #include "spartanport_settings.h"
 #include "spartanport_graphics.h"
+#endif
 #include "video_core/renderer_vulkan/vk_temporal_upscaler.h"
 #include "video_core/renderer_vulkan/vk_presenter.h"
 #include "video_core/renderer_vulkan/vk_warmup_inbox.h"
@@ -264,7 +268,11 @@ void CaptureScreenshot(const Instance& instance, Scheduler& scheduler, vk::Comma
         vmaDestroyBuffer(allocator, buffer, allocation);
         if (!converted) {
             LOG_ERROR(Render_Vulkan, "Screenshot: unsupported format {}", vk::to_string(format));
+            #ifdef BB_PORT_BUILD
+            BbOverlay::Warn("Screenshot", "Unsupported image format", -1.0f);
+#else
             SpartanOverlay::ShowNotice("Screenshot failed: unsupported image format");
+#endif
             return;
         }
         size_t png_size = 0;
@@ -285,10 +293,18 @@ void CaptureScreenshot(const Instance& instance, Scheduler& scheduler, vk::Comma
         }
         if (saved) {
             std::printf("Screenshot: %s (%ux%u)\n", Common::FS::PathToUTF8String(path).c_str(), width, height);
+            #ifdef BB_PORT_BUILD
+            BbOverlay::Warn("Screenshot saved", Common::FS::PathToUTF8String(path.filename()), -1.0f);
+#else
             SpartanOverlay::ShowNotice("Screenshot saved: " + Common::FS::PathToUTF8String(path.filename()));
+#endif
         } else {
             LOG_ERROR(Render_Vulkan, "Screenshot: cannot write {}", Common::FS::PathToUTF8String(path));
+            #ifdef BB_PORT_BUILD
+            BbOverlay::Warn("Screenshot failed", "Cannot write the file", -1.0f);
+#else
             SpartanOverlay::ShowNotice("Screenshot failed: cannot write the file");
+#endif
         }
     });
 }
@@ -320,7 +336,11 @@ Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_
     fsr_pass.Create(device, instance.GetAllocator(), num_images,
                     instance.IsShaderFloat16Supported());
     pp_pass.Create(device, swapchain.GetSurfaceFormat().format);
+#ifdef BB_PORT_BUILD
+    BbOverlay::Init(instance, swapchain.GetSurfaceFormat().format, num_images);
+#else
     SpartanOverlay::Init(instance, swapchain.GetSurfaceFormat().format, num_images);
+#endif
 
     const bool binary_cache = EmulatorSettingsImpl::Flag("SPARTAN_PIPELINE_BINARIES", true) &&
                               EmulatorSettings.IsPipelineCacheEnabled();
@@ -340,7 +360,9 @@ Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_
         rasterizer->GetPipelineCache().StartBackgroundWarmUp()) {
         return;
     }
+#ifndef BB_PORT_BUILD
     SpartanOverlay::SetLoading(true, 0, 0);
+#endif
     PresentLoadingFrame();
     auto last = std::chrono::steady_clock::now();
     rasterizer->GetPipelineCache().WarmUp([&](u32 done, u32 total) {
@@ -349,10 +371,14 @@ Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_
             return;
         }
         last = now;
+#ifndef BB_PORT_BUILD
         SpartanOverlay::SetLoading(true, done, total);
+#endif
         PresentLoadingFrame();
     });
+#ifndef BB_PORT_BUILD
     SpartanOverlay::SetLoading(false, 0, 0);
+#endif
 
 }
 
@@ -827,7 +853,11 @@ void Presenter::PresentLoadingFrame() {
                            range);
     barrier(vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eColorAttachmentOptimal,
             vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eColorAttachmentWrite);
+#ifdef BB_PORT_BUILD
+    BbOverlay::Render(cmdbuf, swapchain.ImageView(), extent);
+#else
     SpartanOverlay::Render(cmdbuf, swapchain.ImageView(), extent);
+#endif
     barrier(vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::ePresentSrcKHR,
             vk::AccessFlagBits::eColorAttachmentWrite, {});
     SubmitInfo info{};
@@ -950,7 +980,11 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
             CaptureScreenshot(instance, scheduler, cmdbuf, *frame);
         }
         // spartanport: the settings menu / FPS counter over the frame, at display resolution.
+#ifdef BB_PORT_BUILD
+        const bool overlay = BbOverlay::Visible();
+#else
         const bool overlay = SpartanOverlay::Visible();
+#endif
         const std::array post_barriers{
             vk::ImageMemoryBarrier{
                 .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
@@ -980,7 +1014,12 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
                                vk::PipelineStageFlagBits::eAllCommands,
                                vk::DependencyFlagBits::eByRegion, {}, {}, post_barriers);
         if (overlay) {
+#ifdef BB_PORT_BUILD
+            BbOverlay::NotePresent();
+            BbOverlay::Render(cmdbuf, swapchain.ImageView(), extent);
+#else
             SpartanOverlay::Render(cmdbuf, swapchain.ImageView(), extent, !is_reusing_frame);
+#endif
             const vk::ImageMemoryBarrier to_present{
                 .srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite,
                 .dstAccessMask = vk::AccessFlagBits::eNone,

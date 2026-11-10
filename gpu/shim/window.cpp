@@ -8,9 +8,14 @@
 #include "common/assert.h"
 #include "common/logging/log.h"
 #include "sdl_window.h"
+#ifdef BB_PORT_BUILD
+#include "bbport_overlay.h"
+#include "bbport_settings.h"
+#else
 #include "spartanport_overlay.h"
 #include "spartanport_graphics.h"
 #include "spartanport_settings.h"
+#endif
 
 namespace Frontend {
 
@@ -26,6 +31,9 @@ void ToggleMousePause() {
 // negative or out-of-range value falls back to the primary with a diagnostic. SDL_WINDOWPOS_CENTERED
 // is SDL_WINDOWPOS_CENTERED_DISPLAY(0), so the primary stays the safe default on every path.
 static SDL_DisplayID MonitorDisplay() {
+#ifdef BB_PORT_BUILD
+    return SDL_GetPrimaryDisplay();
+#else
     auto& settings = SpartanSettings::Get();
     int detected = 0;
     if (SDL_DisplayID* list = SDL_GetDisplays(&detected)) {
@@ -60,6 +68,7 @@ static SDL_DisplayID MonitorDisplay() {
     const SDL_DisplayID chosen = displays[index];
     SDL_free(displays);
     return chosen;
+#endif
 }
 
 // spartanport: a window opens at the render resolution chosen in the launcher (or the in-game menu), fitted
@@ -67,9 +76,14 @@ static SDL_DisplayID MonitorDisplay() {
 // restoring to that size shrunk to fit. The picture is scaled to the window either way. True when shrunk.
 static bool StartSize(s32& width, s32& height, SDL_DisplayID display) {
     constexpr int title_room = 48;
+#ifdef BB_PORT_BUILD
+    const int index = std::clamp(BbSettings::Get().output_res.load(), 0, BbSettings::OutputCount - 1);
+    const int w = BbSettings::OutputWidths[index], h = BbSettings::OutputHeights[index];
+#else
     const std::vector<std::string> names = SpartanGraphics::ResolutionNames();
     const int index = std::clamp(SpartanSettings::Get().render_resolution.load(), 0, int(names.size()) - 1);
     const auto [w, h] = SpartanGraphics::ResolutionSize(names[index]);
+#endif
     double scale = 1.0;
     SDL_Rect usable{};
     if (SDL_GetDisplayUsableBounds(display, &usable) && usable.w > 0 && usable.h > title_room) {
@@ -127,12 +141,16 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}
     } else {
         UNREACHABLE_MSG("Unsupported SDL video driver {}", driver ? driver : "(none)");
     }
+#ifdef BB_PORT_BUILD
+    ApplyDisplayMode(0);
+#else
     // spartanport: SPARTAN_FULLSCREEN=1 (older launchers) still asks for fullscreen.
     if (const char* fullscreen = std::getenv("SPARTAN_FULLSCREEN"); fullscreen && fullscreen[0] == '1' &&
         SpartanSettings::Get().display_mode == SpartanGraphics::Windowed) {
         SpartanSettings::Get().display_mode = SpartanGraphics::Borderless;
     }
     ApplyDisplayMode(SpartanSettings::Get().display_mode);
+#endif
     // spartanport: the game has no mouse; the in-game menu draws its own cursor (SpartanOverlay::SetOpen).
     SDL_HideCursor();
     int w = 0, h = 0;
@@ -145,6 +163,13 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}
 // Windowed, borderless (desktop-sized, no mode change) or exclusive fullscreen at the desktop
 // mode. Window thread only (SDL). The swapchain follows the size events.
 void WindowSDL::ApplyDisplayMode(int mode) {
+#ifdef BB_PORT_BUILD
+    display_mode = mode;
+    SDL_SetWindowFullscreen(window, false);
+    SDL_SyncWindow(window);
+    const SDL_DisplayMode* current = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window));
+    if (current) std::printf("Window: %dx%d at %.2f Hz\n", current->w, current->h, double(current->refresh_rate));
+#else
     display_mode = mode;
     if (mode == SpartanGraphics::Windowed) {
         SDL_SetWindowFullscreen(window, false);
@@ -167,6 +192,7 @@ void WindowSDL::ApplyDisplayMode(int mode) {
     } else {
         std::printf("Window: %s\n", SpartanGraphics::DisplayModeNames[mode]);
     }
+#endif
 }
 
 WindowSDL::~WindowSDL() {
@@ -185,8 +211,13 @@ void WindowSDL::TakeMouseInput(MouseInput& input) {
         std::scoped_lock lock{text_mutex};
         typing = text_active;
     }
+#ifdef BB_PORT_BUILD
+    input.captured = mouse_mode_available.load() && mouse_mode_enabled.load() && focused && !typing &&
+                     !BbOverlay::CapturesInput();
+#else
     input.captured = mouse_mode_available.load() && mouse_mode_enabled.load() && focused && !typing &&
                      !SpartanOverlay::CapturesInput();
+#endif
     if (!input.captured) {
         mouse_dx.store(0.0f); mouse_dy.store(0.0f); wheel_x.store(0.0f); wheel_y.store(0.0f);
         return;
@@ -234,7 +265,11 @@ void WindowSDL::UpdateTextTitle() {
     const std::string title = text_active ? base_title + " \u2014 " + text_prompt + ": " + text + "_  (Enter = OK, Esc = cancel)"
                                           : base_title;
     SDL_SetWindowTitle(window, title.c_str());
+#ifdef BB_PORT_BUILD
+    BbOverlay::SetTextEntry(text_active, text_prompt, text);
+#else
     SpartanOverlay::SetTextEntry(text_active, text_prompt, text);
+#endif
 }
 
 bool WindowSDL::PollEvents() {
@@ -247,12 +282,14 @@ bool WindowSDL::PollEvents() {
             UpdateTextTitle();
         }
     }
-    if (!text_active) {
-        SpartanOverlay::UpdateTextInput(window);
-    }
+#ifdef BB_PORT_BUILD
+    if (!text_active) BbOverlay::UpdateTextInput(window);
+#else
+    if (!text_active) SpartanOverlay::UpdateTextInput(window);
     if (const int mode = SpartanSettings::Get().display_mode; mode != display_mode) {
         ApplyDisplayMode(mode);
     }
+#endif
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         if (text_active && (event.type == SDL_EVENT_TEXT_INPUT || event.type == SDL_EVENT_KEY_DOWN)) {
@@ -282,9 +319,11 @@ bool WindowSDL::PollEvents() {
             UpdateTextTitle();
             continue;
         }
-        if (SpartanOverlay::HandleEvent(event)) {
-            continue;
-        }
+#ifdef BB_PORT_BUILD
+        if (BbOverlay::HandleEvent(event)) continue;
+#else
+        if (SpartanOverlay::HandleEvent(event)) continue;
+#endif
         if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
             if (mouse_mode_available.load() && mouse_toggle_scancode.load() > 0 &&
                 event.key.scancode == mouse_toggle_scancode.load()) {
@@ -359,9 +398,14 @@ bool WindowSDL::PollEvents() {
     // another window or the game's pause menu (the pause key) get it back. Taken back, it starts
     // at the window's centre; let go by the pause key, the system cursor shows.
     const bool paused = mouse_paused.load(std::memory_order_relaxed);
+#ifdef BB_PORT_BUILD
+    const bool lock = (mouse_mode_available.load() && mouse_mode_enabled.load()) && !text_active && !paused &&
+                      !BbOverlay::CapturesInput() && (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS);
+#else
     const bool lock = (SpartanSettings::Get().mouse_lock.load(std::memory_order_relaxed) ||
                        (mouse_mode_available.load() && mouse_mode_enabled.load())) && !text_active && !paused &&
                       !SpartanOverlay::CapturesInput() && (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS);
+#endif
     if (lock != mouse_locked) {
         if (lock) SDL_WarpMouseInWindow(window, width / 2.0f, height / 2.0f);
         if (SDL_SetWindowRelativeMouseMode(window, lock)) mouse_locked = lock;
