@@ -108,7 +108,7 @@ static ABI void guest_exit(void) { puts("Runtime: process finalizer callback rea
 static int cpu_supported(char *missing, size_t size) {
     missing[0] = 0;
     const char *check = getenv("SPARTAN_CPU_CHECK");
-    if (check && !strcmp(check, "0")) return 1;
+    if (getenv("BB_SKIP_CPU_CHECK") || (check && !strcmp(check, "0"))) return 1;
     const CpuFeatureWords words = cpu_feature_words();
     if (cpu_missing_fatal(words, missing, size)) {
         printf("STOP: this CPU lacks instruction sets the game's code uses: %s "
@@ -563,7 +563,7 @@ int main(int argc, char **argv) {
     page_size = (size_t)sysconf(_SC_PAGESIZE);
     struct sigaction sa = {0}; sa.sa_sigaction = fault; sa.sa_flags = SA_SIGINFO;
     sigemptyset(&sa.sa_mask);
-    sigaction(SIGSEGV, &sa, NULL); sigaction(SIGILL, &sa, NULL); sigaction(SIGBUS, &sa, NULL);
+    sigaction(SIGSEGV, &sa, NULL); sigaction(SIGILL, &sa, NULL); sigaction(SIGBUS, &sa, NULL); sigaction(SIGTRAP, &sa, NULL);
     Dl_info self_info;
     if (dladdr((void *)main,&self_info)) exe_base=(uintptr_t)self_info.dli_fbase;
     struct sigaction dump = {0}; dump.sa_sigaction = thread_dump; dump.sa_flags = SA_SIGINFO|SA_RESTART;
