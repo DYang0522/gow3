@@ -62,8 +62,6 @@ void Set(Values& v, const std::string& key, const std::string& value) {
                 v.frame_gen = g;
             }
         }
-    } else if (key == "frame_gen_multiplier") {
-        v.frame_gen_multiplier = std::clamp(i, 2, 4);
     } else if (key == "frame_gen_fit_display") {
         v.frame_gen_fit_display = i != 0;
     } else if (key == "preset") {
@@ -142,12 +140,8 @@ Values& Get() {
 
 void Load() {
     auto& v = Get();
-    v.fg401_fallback = -1;
-    v.fg401_fallback_source = -1;
     v.frame_gen_hdr = false;
     v.frame_gen_problem = nullptr;
-    v.fg401_problem = nullptr;
-    v.fg402_problem = nullptr;
     v.object_motion_cache = false;
     v.fsr_compatibility_options = false;
     for (int e = 0; e < EffectCount; ++e) {
@@ -184,7 +178,7 @@ void Load() {
         {"BB_REACTIVE", "reactive"},              {"BB_REACTIVE_SCALE", "reactive_scale"},
         {"BB_REACTIVE_THRESHOLD", "reactive_threshold"}, {"BB_REACTIVE_MAX", "reactive_max"},
         {"BB_UPSCALE_PRESET", "preset"},            {"BB_OBJECT_MOTION", "object_motion"},
-        {"BB_FRAME_GEN", "frame_gen"},              {"BB_FRAME_GEN_MULTIPLIER", "frame_gen_multiplier"},
+        {"BB_FRAME_GEN", "frame_gen"},
         {"BB_FRAME_GEN_FIT_DISPLAY", "frame_gen_fit_display"},
         {"BB_VSYNC", "vsync"},
     };
@@ -228,43 +222,18 @@ void ConfigureUpscalerSupport(bool fsr4) {
     }
 }
 
-void ConfigureFg401Support(bool available, const char* problem, int provider) {
-    auto& v = Get();
-    auto& supported = provider == FrameGenFsr402 ? v.fg402_supported : v.fg401_supported;
-    auto& message = provider == FrameGenFsr402 ? v.fg402_problem : v.fg401_problem;
-    supported = available;
-    static std::string kept[2];
-    auto& text = kept[provider == FrameGenFsr402];
-    text = problem ? problem : "";
-    message = available || text.empty() ? nullptr : text.c_str();
-}
-
 void SelectFrameGen(int provider) {
     auto& v = Get();
-    v.frame_gen = provider;
-    v.fg401_fallback = -1;
-    v.fg401_fallback_source = -1;
+    v.frame_gen = provider == FrameGenFsr3 ? FrameGenFsr3 : FrameGenOff;
     v.frame_gen_problem = nullptr;
 }
 
-void FrameGenFailure(int provider, const char* problem) {
+void FrameGenFailure(const char* problem) {
     auto& v = Get();
-    if (IsMlFrameGen(provider)) {
-        ConfigureFg401Support(false, problem, provider);
-        v.fg401_fallback_source = provider;
-        v.fg401_fallback = FrameGenFsr3;
-        v.frame_gen_problem = "ML-FG failed; FSR 3.1 FG active.";
-    } else if (IsMlFrameGen(v.frame_gen)) {
-        v.fg401_fallback_source = v.frame_gen.load();
-        v.fg401_fallback = FrameGenOff;
-        v.frame_gen_problem = "Frame generation unavailable; FG off.";
-    } else {
-        // Existing DLSS / FSR 3.1 fallback policy.
-        static std::string kept;
-        kept = problem ? problem : "Frame generation failed.";
-        v.frame_gen_problem = kept.c_str();
-        v.frame_gen = provider == FrameGenDlss ? FrameGenFsr3 : FrameGenOff;
-    }
+    static std::string kept;
+    kept = problem ? problem : "FSR 3.1 frame generation failed.";
+    v.frame_gen_problem = kept.c_str();
+    v.frame_gen = FrameGenOff;
 }
 
 void ConfigureDlssSupport(bool available, const char* problem) {
@@ -339,9 +308,8 @@ void Save() {
     for (int e = 0; e < EffectCount; ++e) {
         std::fprintf(file, "%s=%d\n", Effects[e].key, int(v.effects[e].load()));
     }
-    std::fprintf(file, "frame_gen=%s\nframe_gen_multiplier=%d\nframe_gen_fit_display=%d\n",
-                 FrameGenName(v.frame_gen), v.frame_gen_multiplier.load(),
-                 int(v.frame_gen_fit_display.load()));
+    std::fprintf(file, "frame_gen=%s\nframe_gen_fit_display=%d\n",
+                 FrameGenName(v.frame_gen), int(v.frame_gen_fit_display.load()));
     std::fprintf(file, "model_lod=%d\noutput_res=%dx%d\n", v.model_lod.load(),
                  OutputWidths[v.output_res], OutputHeights[v.output_res]);
     std::fprintf(file, "mute_unfocused=%d\n", int(v.mute_unfocused.load()));
@@ -378,7 +346,7 @@ const char* PresetName(int preset) {
 }
 
 const char* FrameGenName(int frame_gen) {
-    static constexpr const char* names[FrameGenCount] = {"off", "fsr3", "dlss", "fsr401", "fsr402"};
+    static constexpr const char* names[FrameGenCount] = {"off", "fsr3"};
     return names[std::clamp(frame_gen, 0, FrameGenCount - 1)];
 }
 

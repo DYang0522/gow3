@@ -547,70 +547,23 @@ void Menu() {
     ImGui::EndDisabled(); // upscaler off
 
     ImGui::SeparatorText("Frame generation");
-    static const char* frame_gens[] = {"Off", "FSR 3.1 (any GPU)", "DLSS (NVIDIA RTX 40/50)",
-        "AMD ML-FG 4.0.1 (RX 9000, 2x SDR, experimental)",
-        "AMD ML-FG 4.0.2 (RX 9000, 2x SDR, experimental)"};
-    static_assert(sizeof(frame_gens) / sizeof(*frame_gens) == BbSettings::FrameGenCount);
-    const int frame_gen = s.frame_gen;
+    static const char* frame_gens[] = {"Off", "FSR 3.1 (native Vulkan, any GPU)"};
+    int frame_gen = s.frame_gen;
     if (ImGui::BeginCombo("Frame generation", frame_gens[frame_gen])) {
         for (int i = 0; i < BbSettings::FrameGenCount; ++i) {
-            const bool supported = (i != BbSettings::FrameGenDlss || s.dlssg_max_multiplier > 1) &&
-                (!BbSettings::IsMlFrameGen(i) || s.MlFgSupported(i));
-            ImGui::BeginDisabled(!supported);
             if (ImGui::Selectable(frame_gens[i], i == frame_gen)) {
                 BbSettings::SelectFrameGen(i);
                 dirty = true;
             }
-            ImGui::EndDisabled();
-            if (!supported) {
-                ImGui::SameLine();
-                ImGui::TextDisabled(BbSettings::IsMlFrameGen(i) ? "- unavailable" : "- unsupported by this GPU");
-                if (BbSettings::IsMlFrameGen(i))
-                    if (const char* problem = s.MlFgProblem(i)) Hint(problem);
-            }
         }
         ImGui::EndCombo();
     }
-    Hint("Generates frames between two of the game's frames: 60 FPS on screen becomes 120. Needs a display with that refresh rate (120 Hz or more at 60 FPS); it pauses when the display cannot show the extra frames, and 3x/4x drop to what it can. Adds a little input latency. Menus and movies are not generated.");
-    const int max_multiplier =
-        s.frame_gen == BbSettings::FrameGenDlss ? s.dlssg_max_multiplier.load() : 2;
-    ImGui::BeginDisabled(s.frame_gen == BbSettings::FrameGenOff || max_multiplier <= 2);
-    int multiplier = std::min(s.frame_gen_multiplier.load(), max_multiplier);
-    if (ImGui::SliderInt("Multiplier", &multiplier, 2, std::max(max_multiplier, 2), "%dx")) {
-        Store(s.frame_gen_multiplier, multiplier, true);
-    }
-    ImGui::EndDisabled();
-    ImGui::BeginDisabled(s.frame_gen == BbSettings::FrameGenOff);
+    Hint("FSR 3.1 creates one interpolated frame between game frames. It uses scene depth and motion vectors; menus and movies are not generated. Best results need V-Sync and a display near twice the game's frame rate.");
     Checkbox("Fit to display refresh", s.frame_gen_fit_display);
-    ImGui::EndDisabled();
-    Hint("On: no more frames than the display shows (an uncapped game gets fewer generated frames, and the GPU does less). Off: the multiplier as chosen; past the refresh rate the display shows the newest frames.");
-    // What runs now (fitted: at most the frames the display shows between two of the game's).
-    if (s.ActiveFrameGen() != BbSettings::FrameGenOff && !s.frame_gen_hdr && s.frame_gen_display_hz > 0) {
-        const int now = std::min(s.frame_gen_now.load(), multiplier - 1);
-        if (now > 0 && s.frame_gen_flip_limit > 0) {
-            ImGui::TextDisabled("Now %dx on a %d Hz display; V-Sync (FIFO) caps the game at %d FPS",
-                                now + 1, s.frame_gen_display_hz.load(),
-                                s.frame_gen_flip_limit.load());
-        } else if (now > 0) {
-            ImGui::TextDisabled("Now %dx on a %d Hz display", now + 1,
-                                s.frame_gen_display_hz.load());
-        } else if (s.frame_gen_fit_display) {
-            ImGui::TextDisabled("Paused: no room on a %d Hz display at this frame rate",
-                                s.frame_gen_display_hz.load());
-        } else {
-            ImGui::TextDisabled("Paused: presenting fell behind (V-Sync on a slower display?)");
-        }
+    if (s.frame_gen == BbSettings::FrameGenFsr3 && s.frame_gen_display_hz > 0) {
+        ImGui::TextDisabled("Display refresh: %d Hz", s.frame_gen_display_hz.load());
     }
-    if (BbSettings::IsMlFrameGen(s.frame_gen)) {
-        if (const char* problem = s.MlFgProblem(s.frame_gen)) {
-            ImGui::PushTextWrapPos();
-            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "%s", problem);
-            ImGui::PopTextWrapPos();
-        }
-        if (s.frame_gen_hdr)
-            ImGui::TextDisabled("ML-FG paused: HDR output.");
-    }
-    if (const char* problem = s.frame_gen_problem.load(); problem && !s.frame_gen_hdr) {
+    if (const char* problem = s.frame_gen_problem.load()) {
         ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "%s", problem);
     }
 
