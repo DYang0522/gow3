@@ -57,7 +57,7 @@ static ABI int32_t mutex_init(GuestMutex **out, GuestAttr **attr, const char *na
     e = pthread_mutexattr_settype(&native_attr, native_type);
     if (!e) e = pthread_mutex_init(&mutex->native, &native_attr);
     pthread_mutexattr_destroy(&native_attr);
-    if (e) { free(mutex); return orbis_error(e); }
+    if (e) { guest_handle_free(mutex,sizeof(*mutex)); return orbis_error(e); }
     *out = mutex; ++created; return 0;
 }
 static pthread_mutex_t static_init = PTHREAD_MUTEX_INITIALIZER;
