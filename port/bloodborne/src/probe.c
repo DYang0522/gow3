@@ -32,7 +32,7 @@ static char (*names)[128];
 static uint64_t import_count;
 static unsigned char *image;
 static size_t page_size;
-typedef struct { uint64_t base, size, init, tls_address, tls_memsz, tls_filesz, tls_module; } LinkedModule;
+typedef struct { uint64_t base, size, init, tls_address, tls_memsz, tls_filesz, tls_module, tls_align; } LinkedModule;
 static LinkedModule modules[16];
 static uint64_t module_count;
 static int entered_game;
@@ -573,7 +573,7 @@ int main(int argc, char **argv) {
     FILE *f = fopen(argv[1], "rb");
     if (!f) fail("cannot open boot file; run prepare.py first");
     char magic[8];
-    if (fread(magic, 1, 8, f) != 8 || (memcmp(magic, "BBPROBE1", 8) && memcmp(magic, "BBPROBE2", 8) && memcmp(magic,"BBPROBE3",8) && memcmp(magic,"BBPROBE4",8) && memcmp(magic,"BBPROBE5",8))) fail("bad boot file signature");
+    if (fread(magic, 1, 8, f) != 8 || (memcmp(magic, "BBPROBE1", 8) && memcmp(magic, "BBPROBE2", 8) && memcmp(magic,"BBPROBE3",8) && memcmp(magic,"BBPROBE4",8) && memcmp(magic,"BBPROBE5",8) && memcmp(magic,"BBPROBE6",8))) fail("bad boot file signature");
     uint64_t size = read64(f), entry = read64(f), ns = read64(f), nr = read64(f);
     import_count = read64(f);
     uint64_t capabilities = memcmp(magic, "BBPROBE1", 8) ? read64(f) : 0;
@@ -581,7 +581,8 @@ int main(int argc, char **argv) {
     runtime_start(strict_imports ? 0 : capabilities);
     if (!size || size > 512*1024*1024 || entry >= size || !ns || ns > 64 || nr > 1000000 || import_count > 100000)
         fail("boot file limits exceeded");
-    int multi=!memcmp(magic,"BBPROBE5",8);
+    int multi=!memcmp(magic,"BBPROBE5",8) || !memcmp(magic,"BBPROBE6",8);
+    int multi_v6=!memcmp(magic,"BBPROBE6",8);
     int linked=!memcmp(magic,"BBPROBE3",8) || !memcmp(magic,"BBPROBE4",8) || multi;
     int native_libc=linked && !strict_imports && (capabilities&1);
     uint64_t main_tls[4]={0};
@@ -590,7 +591,7 @@ int main(int argc, char **argv) {
     uint64_t *binding_kinds=calloc(import_count ? import_count : 1,sizeof(*binding_kinds));
     if (!bindings || !binding_kinds) fail("allocation failed");
     if (multi) {
-        /* BBPROBE5: procparam, eboot TLS, module table, bindings (link_modules.py). */
+        /* BBPROBE5/6: procparam, eboot TLS, module table, bindings (link_modules.py). */
         procparam=read64(f);
         for (int i=0;i<4;++i) main_tls[i]=read64(f);
         module_count=read64(f);
@@ -599,6 +600,7 @@ int main(int argc, char **argv) {
             LinkedModule *x=&modules[m];
             x->base=read64(f); x->size=read64(f); x->init=read64(f); x->tls_address=read64(f);
             x->tls_memsz=read64(f); x->tls_filesz=read64(f); x->tls_module=read64(f);
+            x->tls_align=multi_v6 ? read64(f) : 16;
         }
         nb=read64(f);
     } else if (linked) {
@@ -617,7 +619,8 @@ int main(int argc, char **argv) {
             LinkedModule *x=&modules[m];
             if (x->base>=size || !x->size || x->size>size-x->base || x->init<x->base || x->init-x->base>=x->size ||
                 (x->tls_module && (x->tls_address>=size || x->tls_memsz>size-x->tls_address || x->tls_memsz>1024*1024 ||
-                                   x->tls_filesz>x->tls_memsz || x->tls_module<2 || x->tls_module>7)))
+                                   x->tls_filesz>x->tls_memsz || x->tls_module<2 || x->tls_module>7 ||
+                                   !x->tls_align || x->tls_align>4096 || (x->tls_align&(x->tls_align-1))))
                 fail("invalid linked module metadata");
         }
         if (nb>import_count) fail("invalid binding count");
@@ -752,7 +755,8 @@ int main(int argc, char **argv) {
                 if ((segments[i].flags&1) && modules[m].init>=segments[i].address && modules[m].init-segments[i].address<segments[i].size) init_executable=1;
             if (!init_executable) fail("module init is not executable");
             if (modules[m].tls_module)
-                runtime_set_module_tls(modules[m].tls_module,image+modules[m].tls_address,modules[m].tls_filesz,modules[m].tls_memsz);
+                runtime_set_module_tls(modules[m].tls_module,image+modules[m].tls_address,modules[m].tls_filesz,
+                                       modules[m].tls_memsz,modules[m].tls_align);
         }
         runtime_set_main_tls(image+main_tls[0],main_tls[1],main_tls[2],main_tls[3]);
         runtime_thread_attach_main();
