@@ -151,6 +151,7 @@ private:
     Scheduler draw_scheduler;
 #ifdef BB_PORT_BUILD
     std::unique_ptr<FrameGenerator> frame_generator;
+    bool swapchain_frame_gen{};
 #endif
     std::deque<u64> recent_frame_ticks; ///< spartanport: SPARTAN_FRAMES_AHEAD bound (PrepareFrame)
     Scheduler present_scheduler;
