@@ -95,12 +95,6 @@ def online_overrides(env, user_dir):
     env['SHADPS4_HTTP_HOST_OVERRIDES_JSON'] = str(path)
 
 
-# The 1.09 executable with Lance McDonald's 60 fps patch applied to it, as some dumps ship it
-# (seen on US CUSA00900): one of its edits inverts a branch in the menu code (+0xf6d90d) and the
-# gestures menu crashes the game. The port has its own 60 fps; the clean 1.09 eboot.bin is needed.
-LANCE_60FPS_IMAGE = 'bbc91f4dff6bc3118b039464289e39878a8fdfc802a07fab9d5fe84d935a676f'
-
-
 # The in-game trophy pop-up (gpu/shim/bbport_overlay.cpp) speaks the game's text language (BB_LANGUAGE
 # codes, launcher LANGUAGES): the trophy names' translations (launcher/bbport_lang_trophies.py) and its heading.
 TROPHY_LANGUAGES = {'1': 'en', '8': 'ru', '0': 'ja', '2': 'fr', '3': 'es', '4': 'de', '5': 'it', '9': 'ko',
@@ -187,11 +181,6 @@ def eboot_image(game):
     for p in loads:
         image[p['vaddr']:p['vaddr'] + p['filesz']] = span(elf, p['offset'], p['filesz'])
     return image
-
-
-def image_sha256(game):
-    import hashlib
-    return hashlib.sha256(eboot_image(game)).hexdigest()
 
 
 def fail(message):
@@ -666,28 +655,8 @@ def main():
     if missing:
         fail(f'The game folder {game} has no {" / ".join(missing)}: the game was not unpacked completely. '
              'Unpack the base game into a new, empty folder again and copy the 1.09 update over it.')
-    if env.get('BB_SKIP_GAME_CHECK') != '1':
-        from clean_eboot import CLEAN_IMAGE, note as eboot_note, restore as restore_eboot
-        try:
-            digest = image_sha256(game)
-        except (OSError, ValueError, KeyError, IndexError):
-            digest = None  # prepare.py reports unreadable executables itself
-        # Not the clean 1.09 eboot.bin (a 60 fps one, a patched one, one cut off): the clean one comes back when it
-        # is still on this PC (clean_eboot.py), the other one is kept beside it.
-        if digest != CLEAN_IMAGE:
-            try:
-                restored = restore_eboot(game)
-            except Exception:  # a repair: never in the way of a start
-                restored = None
-            if restored:
-                print(eboot_note(restored))
-                digest = CLEAN_IMAGE
-        prepatched = digest == LANCE_60FPS_IMAGE
-        if prepatched:
-            fail("This eboot.bin has Lance McDonald's 60 fps patch applied to it, which crashes the "
-                 'game when the gestures menu opens (the port has its own 60 fps): copy eboot.bin '
-                 'from a clean dump of the 1.09 update into the game folder, replacing this one. '
-                 'BB_SKIP_GAME_CHECK=1 starts it anyway.')
+    # Do not pin the game executable to a dump-specific SHA-256. The patch groups below
+    # identify the code they can safely modify and leave unsupported versions unpatched.
     sys.path.insert(0, str(PORT / 'scripts'))
     from patches import (OUTPUT_SIZE, PATCH_GROUPS, game_app_version, group_list, hud_canvas,
                          image_groups, output_size, read_settings, ui_viewport)
