@@ -381,14 +381,14 @@ static int32_t create(GuestThread **out,ThreadAttr **attr_slot,GuestEntry entry,
     if (stack_error) { pthread_attr_destroy(&host); runtime_low_unmap(t,sizeof(*t)); return thread_error(stack_error); }
 #else
     void *stack_memory=runtime_low_map(stack_bytes,PROT_READ|PROT_WRITE);
-    if (!stack_memory) { pthread_attr_destroy(&host); free(t); return ERR(12); }
+    if (!stack_memory) { pthread_attr_destroy(&host); runtime_low_unmap(t,sizeof(*t)); return ERR(12); }
     t->stack_memory=stack_memory;
     t->stack_mapping_size=stack_bytes;
     int stack_error=pthread_attr_setstack(&host,stack_memory,stack_bytes);
     if (stack_error) {
         release_stack(t);
         pthread_attr_destroy(&host);
-        free(t);
+        runtime_low_unmap(t,sizeof(*t));
         return thread_error(stack_error);
     }
 #endif
