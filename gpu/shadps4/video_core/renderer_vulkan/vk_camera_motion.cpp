@@ -49,6 +49,44 @@ std::array<float, 12> Multiply(const std::array<float, 12>& a, const std::array<
     return out;
 }
 
+using Matrix4 = std::array<float, 16>;
+
+/// Row-vector projection: clip = (xs*x, ys*y, zs*z + zo, z).
+Matrix4 Projection(const std::array<float, 4>& p) {
+    return {p[0], 0.0f, 0.0f, 0.0f,
+            0.0f, p[1], 0.0f, 0.0f,
+            0.0f, 0.0f, p[2], 1.0f,
+            0.0f, 0.0f, p[3], 0.0f};
+}
+
+Matrix4 InverseProjection(const std::array<float, 4>& p) {
+    return {1.0f / p[0], 0.0f, 0.0f, 0.0f,
+            0.0f, 1.0f / p[1], 0.0f, 0.0f,
+            0.0f, 0.0f, 0.0f, 1.0f / p[3],
+            0.0f, 0.0f, 1.0f, -p[2] / p[3]};
+}
+
+/// Convert the stored 3x4 affine matrix (rows [R | t], column vectors)
+/// into its row-vector 4x4 representation.
+Matrix4 RowVectors(const std::array<float, 12>& a) {
+    return {a[0], a[4], a[8], 0.0f,
+            a[1], a[5], a[9], 0.0f,
+            a[2], a[6], a[10], 0.0f,
+            a[3], a[7], a[11], 1.0f};
+}
+
+Matrix4 Multiply4(const Matrix4& a, const Matrix4& b) {
+    Matrix4 out{};
+    for (int r = 0; r < 4; ++r) {
+        for (int col = 0; col < 4; ++col) {
+            for (int k = 0; k < 4; ++k) {
+                out[r * 4 + col] += a[r * 4 + k] * b[k * 4 + col];
+            }
+        }
+    }
+    return out;
+}
+
 } // namespace
 
 CameraMotion::CameraMotion(const Instance& instance_, Scheduler& scheduler_,
@@ -170,16 +208,67 @@ float CameraMotion::Near() const noexcept {
 }
 
 float CameraMotion::Far() const noexcept {
-    return current.far_plane;
+    return FarPlane(current.far_plane);
+}
+
+float CameraMotion::FarPlane(float fallback) const noexcept {
+    if (!current.valid) {
+        return fallback;
+    }
+    // depth = zs + zo / z is 1 at the far plane; zs == 1 is infinite.
+    const float zs = current.proj[2], zo = current.proj[3];
+    const float far_z = zs < 1.0f ? zo / (1.0f - zs) : 0.0f;
+    const float near_z = Near();
+    return std::isfinite(far_z) && far_z > near_z && far_z < 1.0e7f ? far_z : fallback;
+}
+
+bool CameraMotion::WorldCamera(std::array<float, 12>& inverse_view) const noexcept {
+    if (!current.valid) {
+        return false;
+    }
+    for (const float value : current.inv_view) {
+        if (!std::isfinite(value)) {
+            return false;
+        }
+    }
+    inverse_view = current.inv_view;
+    return true;
+}
+
+bool CameraMotion::ClipTransforms(std::array<float, 16>& view_to_clip,
+                                  std::array<float, 16>& clip_to_prev_clip,
+                                  std::array<float, 16>& prev_clip_to_clip) const noexcept {
+    if (!current.valid || !previous.valid) {
+        return false;
+    }
+    const auto valid_projection = [](const std::array<float, 4>& p) {
+        return std::all_of(p.begin(), p.end(), [](float v) { return std::isfinite(v); }) &&
+               p[0] != 0.0f && p[1] != 0.0f && p[3] != 0.0f;
+    };
+    if (!valid_projection(current.proj) || !valid_projection(previous.proj)) {
+        return false;
+    }
+
+    view_to_clip = Projection(current.proj);
+    // Current clip -> current view -> world -> previous view -> previous clip.
+    clip_to_prev_clip = Multiply4(
+        Multiply4(InverseProjection(current.proj),
+                  RowVectors(Multiply(previous.view, current.inv_view))),
+        Projection(previous.proj));
+    // Previous clip -> previous view -> world -> current view -> current clip.
+    prev_clip_to_clip = Multiply4(
+        Multiply4(InverseProjection(previous.proj),
+                  RowVectors(Multiply(current.view, previous.inv_view))),
+        Projection(current.proj));
+    return true;
 }
 
 CameraMotion::FrameGenerationCamera CameraMotion::GetFrameGenerationCamera() const noexcept {
     FrameGenerationCamera camera{};
-    if (!current.valid) {
+    std::array<float, 12> inverse_view{};
+    if (!WorldCamera(inverse_view)) {
         return camera;
     }
-
-    const auto& inverse_view = current.inv_view;
     camera.position = {inverse_view[3], inverse_view[7], inverse_view[11]};
     // inverse_view is a row-major 3x4 view-to-world matrix. Its columns are the
     // camera's world-space right, up and forward vectors.
