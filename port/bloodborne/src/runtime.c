@@ -43,21 +43,28 @@ void runtime_set_libc_tls(const void *data, uint64_t filesz, uint64_t memsz) { r
  * a guest-created thread exits so short-lived worker threads do not leak one block
  * per module for the lifetime of the process. */
 void runtime_thread_tls_cleanup(void) {
+    uint64_t *dtv=runtime_thread_dtv();
     for (unsigned i=2;i<TLS_MODULES;++i) {
         free(tls_blocks[i]);
         tls_blocks[i]=NULL;
+        dtv[i+1]=0;
     }
+    dtv[0]=1;
 }
 
 static ABI void *guest_tls_get_addr(const uint64_t *index) {
     if (!index || index[0]<2 || index[0]>=TLS_MODULES || !tls_modules[index[0]].data || index[1]>=tls_modules[index[0]].memsz) {
         fputs("STOP: unsupported TLS module/offset\n",stderr); exit(21);
     }
-    unsigned char **block=&tls_blocks[index[0]];
+    uint64_t *dtv=runtime_thread_dtv();
+    unsigned module=(unsigned)index[0];
+    unsigned char **block=&tls_blocks[module];
     if (!*block) {
-        *block=calloc(1,tls_modules[index[0]].memsz);
+        *block=calloc(1,(size_t)tls_modules[module].memsz);
         if (!*block) { fputs("Cannot allocate module TLS\n",stderr); exit(1); }
-        memcpy(*block,tls_modules[index[0]].data,tls_modules[index[0]].filesz);
+        memcpy(*block,tls_modules[module].data,(size_t)tls_modules[module].filesz);
+        dtv[module+1]=(uint64_t)(uintptr_t)*block;
+        if (!dtv[0]) dtv[0]=1;
     }
     return *block+index[1];
 }
