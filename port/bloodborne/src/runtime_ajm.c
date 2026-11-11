@@ -337,9 +337,19 @@ static void run_job(Context *ctx, uint32_t id, Job *job) {
     int32_t internal=0;
     if (in_size) for (;;) {
         if (in->gapless_loop && gapless_end(in)) { gapless_reset(in); in->total_samples=0; }
-        if ((in->codec_flags & 1) && in_size>=4 && !memcmp(input,"RIFF",4)) {
-            if (!parse_riff(in,&input,&in_size)) { flags_result|=RESULT_PARTIAL_INPUT; break; }
-            in->total_samples=0;
+        if (in->codec_flags & 1) {
+            /* A RIFF signature may itself be split across AJM input buffers. Treat
+               any matching prefix as incomplete input rather than reporting that
+               the decoder has not been initialized yet. */
+            static const unsigned char riff_tag[4]={'R','I','F','F'};
+            if (in_size<sizeof(riff_tag) && !memcmp(input,riff_tag,(size_t)in_size)) {
+                flags_result|=RESULT_PARTIAL_INPUT;
+                break;
+            }
+            if (in_size>=sizeof(riff_tag) && !memcmp(input,riff_tag,sizeof(riff_tag))) {
+                if (!parse_riff(in,&input,&in_size)) { flags_result|=RESULT_PARTIAL_INPUT; break; }
+                in->total_samples=0;
+            }
         }
         if (!in->initialized) { flags_result|=RESULT_NOT_INITIALIZED; break; }
         if (!gapless_end(in) && output_room(&out)<next_frame_bytes(in)) flags_result|=RESULT_NOT_ENOUGH_ROOM;
