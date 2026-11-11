@@ -110,6 +110,9 @@ static int32_t wait_count(uint32_t id,int32_t need,uint32_t *timeout,int block) 
                 Waiter **p=&s->first;
                 while (*p!=&w) p=&(*p)->next;
                 *p=w.next; w.result=ERR(60); w.done=1; ++timed_out;
+                /* Removing the head may unblock the next FIFO waiter using
+                   tokens that were already available; do not wait for another signal. */
+                grant_waiters(s);
             } else if (e!=ETIMEDOUT) host_check(e);
         }
         result=w.result;
