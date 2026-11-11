@@ -50,9 +50,11 @@ public:
     [[nodiscard]] bool Enabled() const noexcept {
         return enabled;
     }
+#ifdef BB_PORT_BUILD
     void SetFrameGenerator(FrameGenerator* generator) noexcept {
         frame_generator = generator;
     }
+#endif
 
     /// A draw into a full-size RGBA16F target with the scene depth: the scene color.
     void OnSceneColor(VideoCore::ImageId color);
@@ -145,9 +147,11 @@ private:
 
     void Run();
     void RunScaled();
+#ifdef BB_PORT_BUILD
     void CaptureFrameGen();
     void CaptureHudless(VideoCore::ImageId color);
     void CaptureHudlessUi();
+#endif
     void RunUiOnly(VideoCore::ImageId color, VideoCore::ImageId depth);
     void EnsureUiResources(u32 width, u32 height, vk::Format color, vk::Format depth);
     void PrepareUiDepth(VideoCore::ImageId depth);
@@ -201,9 +205,11 @@ private:
 
     bool enabled = false;
     bool failed = false;
+#ifdef BB_PORT_BUILD
     FrameGenerator* frame_generator = nullptr;
     bool frame_gen_captured = false;
     bool hudless_pending = false;
+#endif
     u64 trigger_hash = 0x9a9cf8a9;
     VideoCore::ImageId scene_color{};
     bool done_this_frame = false;

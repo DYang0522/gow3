@@ -29,7 +29,9 @@
 #include "video_core/renderer_vulkan/vk_shader_util.h"
 #include "video_core/renderer_vulkan/vk_camera_motion.h"
 #include "video_core/renderer_vulkan/vk_frame_capture.h"
+#ifdef BB_PORT_BUILD
 #include "video_core/renderer_vulkan/vk_frame_generation.h"
+#endif
 #include "video_core/renderer_vulkan/vk_instance.h"
 
 #ifdef BB_PORT_BUILD
@@ -346,8 +348,10 @@ bool TemporalUpscaler::OnFrameStart() {
             std::fclose(f);
         }
     }
+#ifdef BB_PORT_BUILD
     frame_gen_captured = false;
     hudless_pending = false;
+#endif
     const auto& settings = PortSettings::Get();
     // The guest's startup resolution patch remains in effect until restart. Keep the FSR
     // model at the applied preset while the menu saves the requested one for run.sh.
@@ -425,11 +429,13 @@ void TemporalUpscaler::OnDispatch(u64 cs_hash) {
     if (cs_hash != trigger_hash || done_this_frame) {
         return;
     }
+#ifdef BB_PORT_BUILD
     // Frame generation needs scene depth and motion even when temporal upscaling is disabled.
     if (frame_generator && frame_generator->Wanted() && !frame_gen_captured) {
         frame_gen_captured = true;
         CaptureFrameGen();
     }
+#endif
     if (failed || Scaled()) {
         return;
     }
@@ -1307,6 +1313,7 @@ void TemporalUpscaler::Run() {
     }
 }
 
+#ifdef BB_PORT_BUILD
 void TemporalUpscaler::CaptureFrameGen() {
     if (!camera_motion.Depth()) {
         return;
@@ -1411,6 +1418,8 @@ void TemporalUpscaler::CaptureHudlessUi() {
     cmdbuf.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier});
 }
 
+#endif // BB_PORT_BUILD
+
 vk::ImageView TemporalUpscaler::CachedView(const VideoCore::Image& image, vk::Format format,
                                            vk::ImageAspectFlags aspect) {
     const vk::Image handle = image.GetImage();
@@ -1487,12 +1496,16 @@ void TemporalUpscaler::OnDraw(u64 vs_hash, VideoCore::ImageId color,
                               VideoCore::ImageId depth, bool native_viewport) {
     if (!Scaled() && vs_hash == ui_trigger_vs) {
         done_this_frame = true;
+#ifdef BB_PORT_BUILD
         hudless_pending = true;
+#endif
     }
+#ifdef BB_PORT_BUILD
     if (hudless_pending && color) {
         hudless_pending = false;
         CaptureHudless(color);
     }
+#endif
     if (!Scaled() || !color) {
         return;
     }
@@ -1522,14 +1535,18 @@ void TemporalUpscaler::OnDraw(u64 vs_hash, VideoCore::ImageId color,
     case UiComposition::Background::Temporal:
         RunScaled();
         if (ui_phase) {
+#ifdef BB_PORT_BUILD
             CaptureHudlessUi();
+#endif
             return;
         }
         // A failed FSR dispatch must not force UI text back to the scene resolution.
         [[fallthrough]];
     case UiComposition::Background::Copy:
         RunUiOnly(color, depth);
+#ifdef BB_PORT_BUILD
         CaptureHudlessUi();
+#endif
         return;
     }
 }

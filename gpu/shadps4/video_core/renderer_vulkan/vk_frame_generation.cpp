@@ -39,10 +39,6 @@ vk::Format HudlessViewFormat(vk::Format storage, vk::Format requested) {
 constexpr vk::ImageUsageFlags InputUsage =
     vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled;
 
-
-constexpr vk::ImageUsageFlags InputUsage =
-    vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled;
-
 void DumpInput(const Instance& instance, Scheduler& scheduler, vk::CommandBuffer cmdbuf,
                vk::Image image, u32 w, u32 h, const char* name) {
     const VkBufferCreateInfo buffer_ci{.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
