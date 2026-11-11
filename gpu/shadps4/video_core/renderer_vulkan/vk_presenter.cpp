@@ -1172,8 +1172,12 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         return;
     }
     swapchain.UpdateVsync();
-    if (window.GetWidth() != swapchain.GetWidth() || window.GetHeight() != swapchain.GetHeight())
+    const bool frame_gen = frame_generator && frame_generator->Wanted();
+    if (window.GetWidth() != swapchain.GetWidth() || window.GetHeight() != swapchain.GetHeight() ||
+        frame_gen != swapchain_frame_gen) {
+        swapchain_frame_gen = frame_gen;
         swapchain.Recreate(window.GetWidth(), window.GetHeight());
+    }
 
     // Bloodborne frame pacing: the generated image belongs halfway before this game frame.
     // Keep one smoothed game-frame interval and drop generated work first when the frame pool is
