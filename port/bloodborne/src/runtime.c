@@ -161,7 +161,7 @@ static ABI int guard_acquire(uint64_t *guard) {
                                                     memory_order_acq_rel, memory_order_acquire)) break;
         if (expected & 1) return 0;
         if ((uint32_t)(expected >> 32) == guard_owner) {
-            fputs("STOP: recursive/concurrent static initialization is not supported yet\n", stderr);
+            fputs("STOP: recursive guest static initialization detected\n", stderr);
             exit(21);
         }
         sched_yield(); /* another thread is running the initializer */
