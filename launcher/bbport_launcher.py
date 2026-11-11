@@ -204,22 +204,30 @@ def game_environment(s):
     env["BB_LANGUAGE"] = s["language"]
     env["BB_FULLSCREEN"] = "1" if s["fullscreen"] else "0"
     env["BB_PRESENT_MODE"] = s["present_mode"]
-    if s["hdr"]:
-        env["BB_HDR"] = "1"
+    env["BB_HDR"] = "1" if s["hdr"] else "0"
     env["BB_FPS"] = s["fps_mode"]
     if s["fps_limit"] > 0:
         env["BB_FPS_LIMIT"] = str(s["fps_limit"])
+    else:
+        env.pop("BB_FPS_LIMIT", None)
     if s["readbacks"]:
         env["BB_READBACKS"] = s["readbacks"]
+    else:
+        env.pop("BB_READBACKS", None)
+    # The launcher owns these settings; inherited shell variables must not silently
+    # override a disabled option or the selected present mode.
+    env.pop("BB_VSYNC", None)
     env["BB_SAVE_BACKUPS"] = "1" if s["save_backups"] else "0"
-    if s["mangohud"]:
-        env["MANGOHUD"] = "1"
-    if s["frame_stats"]:
-        env["BB_FRAME_STATS"] = "1"
-    if s["gpu_profile"]:
-        env["BB_GPU_PROFILE"] = "1"
-    if s["vk_validation"]:
-        env["BB_VK_VALIDATION"] = "1"
+    for key, enabled in (
+        ("MANGOHUD", s["mangohud"]),
+        ("BB_FRAME_STATS", s["frame_stats"]),
+        ("BB_GPU_PROFILE", s["gpu_profile"]),
+        ("BB_VK_VALIDATION", s["vk_validation"]),
+    ):
+        if enabled:
+            env[key] = "1"
+        else:
+            env.pop(key, None)
     for item in s["extra_env"].split():
         if "=" in item:
             key, value = item.split("=", 1)
