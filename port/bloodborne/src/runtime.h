@@ -41,6 +41,7 @@ int runtime_memory_is_mapped(uintptr_t address, uint64_t size);
 const char *runtime_import_name(const char *name);
 uintptr_t runtime_rwlock_resolve(const char *name);
 void runtime_rwlock_report(void);
+void runtime_rwlock_thread_cleanup(void);
 void runtime_set_libc_tls(const void *data, uint64_t filesz, uint64_t memsz);
 void runtime_set_module_tls(uint64_t module, const void *data, uint64_t filesz, uint64_t memsz, uint64_t align);
 void runtime_set_procparam(void *param);
