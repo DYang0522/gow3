@@ -1358,7 +1358,11 @@ void Rasterizer::DispatchRecord(const ComputePipeline* pipeline) {
             });
         }
     };
+#ifdef BB_PORT_BUILD
+    if (upscaler->Enabled() || upscaler->FrameGenerationWanted()) {
+#else
     if (upscaler->Enabled()) {
+#endif
         upscaler->OnDispatch(cs.pgm_hash);
     }
     if (ExecuteShaderHLE(cs, Regs(), cs_program, *this)) {

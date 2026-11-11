@@ -271,6 +271,12 @@ TemporalUpscaler::TemporalUpscaler(const Instance& instance_, Scheduler& schedul
     }
 }
 
+#ifdef BB_PORT_BUILD
+bool TemporalUpscaler::FrameGenerationWanted() const noexcept {
+    return frame_generator && frame_generator->Wanted();
+}
+#endif
+
 TemporalUpscaler::~TemporalUpscaler() {
     if (resources_ready) scheduler.Finish();
     if (context) {

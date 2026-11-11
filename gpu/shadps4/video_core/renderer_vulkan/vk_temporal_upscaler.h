@@ -54,6 +54,8 @@ public:
     void SetFrameGenerator(FrameGenerator* generator) noexcept {
         frame_generator = generator;
     }
+    /// Frame generation can run independently of the temporal upscaler.
+    [[nodiscard]] bool FrameGenerationWanted() const noexcept;
 #endif
 
     /// A draw into a full-size RGBA16F target with the scene depth: the scene color.

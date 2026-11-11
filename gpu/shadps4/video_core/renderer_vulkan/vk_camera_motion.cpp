@@ -169,51 +169,6 @@ float CameraMotion::Near() const noexcept {
     return -current.proj[3] / current.proj[2];
 }
 
-float CameraMotion::Far() const noexcept {
-    return current.far_plane;
-}
-
-CameraMotion::FrameGenerationCamera CameraMotion::GetFrameGenerationCamera() const noexcept {
-    FrameGenerationCamera camera{};
-    if (!current.valid) {
-        return camera;
-    }
-
-    const auto& inverse_view = current.inv_view;
-    camera.position = {inverse_view[3], inverse_view[7], inverse_view[11]};
-    // inverse_view is a row-major 3x4 view-to-world matrix. Its columns are the
-    // camera's world-space right, up and forward vectors.
-    camera.right = {inverse_view[0], inverse_view[4], inverse_view[8]};
-    camera.up = {inverse_view[1], inverse_view[5], inverse_view[9]};
-    camera.forward = {inverse_view[2], inverse_view[6], inverse_view[10]};
-
-    const auto finite = [](const std::array<float, 3>& v) {
-        return std::isfinite(v[0]) && std::isfinite(v[1]) && std::isfinite(v[2]);
-    };
-    const auto normalize = [](std::array<float, 3>& v) {
-        const float length_squared = v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
-        if (!std::isfinite(length_squared) || length_squared < 0.25f ||
-            length_squared > 4.0f) {
-            return false;
-        }
-        const float inverse_length = 1.0f / std::sqrt(length_squared);
-        for (float& component : v) {
-            component *= inverse_length;
-        }
-        return true;
-    };
-
-    camera.near_plane = Near();
-    camera.far_plane = Far();
-    camera.vertical_fov = VerticalFov();
-    camera.valid = finite(camera.position) && normalize(camera.right) &&
-                   normalize(camera.up) && normalize(camera.forward) &&
-                   std::isfinite(camera.near_plane) && camera.near_plane > 0.0f &&
-                   std::isfinite(camera.far_plane) && camera.far_plane > camera.near_plane &&
-                   std::isfinite(camera.vertical_fov) && camera.vertical_fov > 0.0f;
-    return camera;
-}
-
 std::array<std::array<float, 4>, 3> CameraMotion::TaaDepthParameters() const noexcept {
     const auto transform = Multiply(previous.view, current.inv_view);
     return {current.proj, previous.proj,
@@ -284,7 +239,6 @@ void CameraMotion::OnConstants(const float* data) {
     std::memcpy(current.view.data(), data + 8, 12 * sizeof(float));
     std::memcpy(current.inv_view.data(), data + 180, 12 * sizeof(float));
     current.proj = {data[52], data[57], data[62], data[63]};
-    current.far_plane = data[0];
     current.valid = current.proj[0] != 0.0f && current.proj[1] != 0.0f;
     const std::array<u32, 2> size{u32(data[4]), u32(data[5])};
     if (size != render_size) {

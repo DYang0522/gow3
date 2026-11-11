@@ -345,11 +345,11 @@ Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_
                     instance.IsShaderFloat16Supported());
 #endif
 #ifdef BB_PORT_BUILD
-    pp_pass.Create(device, FrameGenerator::ColorFormat);
+    pp_pass.Create(FrameGenerator::ColorFormat);
     frame_generator = std::make_unique<FrameGenerator>(instance, draw_scheduler);
     rasterizer->GetUpscaler().SetFrameGenerator(frame_generator.get());
 #else
-    pp_pass.Create(device, swapchain.GetSurfaceFormat().format);
+    pp_pass.Create(swapchain.GetSurfaceFormat().format);
 #endif
 #ifdef BB_PORT_BUILD
     BbOverlay::Init(instance, swapchain.GetSurfaceFormat().format, num_images);
