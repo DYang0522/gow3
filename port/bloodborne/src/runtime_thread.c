@@ -194,18 +194,16 @@ static void reap_finished_detached(void) {
     for (;;) {
         pthread_mutex_lock(&lock);
         GuestThread *candidate=NULL;
-        pthread_t host;
         for (GuestThread *t=threads;t;t=t->next) {
             if (!t->host_owned && t->detached && t->finished && !t->reaped) {
                 t->reaped=1;
                 candidate=t;
-                host=t->host;
                 break;
             }
         }
         pthread_mutex_unlock(&lock);
         if (!candidate) return;
-        int e=pthread_join(host,NULL);
+        int e=pthread_join(candidate->host,NULL);
         if (e) { fprintf(stderr,"STOP: detached host pthread reap failed: %d\n",e); exit(21); }
         release_stack(candidate);
     }
