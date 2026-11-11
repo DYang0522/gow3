@@ -130,8 +130,8 @@ static void host_thread_cleanup(void *value) {
 static void create_host_cleanup_key(void) {
     host_cleanup_key_ready=pthread_key_create(&host_cleanup_key,host_thread_cleanup)==0;
 }
-/* Host threads that call into guest code without being created by the guest
- * (the main thread, test threads) get a record on first use. */
+/* Host threads that enter guest code without a guest-created pthread handle get a TCB
+ * on first use. A pthread key runs the guest TLS destructors when that host thread exits. */
 GuestThread *runtime_thread_current(void) {
     if (current) return current;
     GuestThread *t=new_thread();
@@ -143,8 +143,7 @@ GuestThread *runtime_thread_current(void) {
     if (host_cleanup_key_ready) pthread_setspecific(host_cleanup_key,t);
     return t;
 }
-/* Host threads that call guest code (HLE decoders invoking guest callbacks) need
- * a TCB/TLS like guest threads; the record lives until process exit. */
+/* HLE callback threads are attached lazily and automatically cleaned up at host-thread exit. */
 void runtime_thread_attach_host(const char *name) {
     GuestThread *t=runtime_thread_current();
     /* Do not rename a guest-owned thread when an HLE callback originates there. */
