@@ -26,6 +26,7 @@ API = (1 << 22) | (3 << 12)  # VK_API_VERSION_1_3: the loader and the card need 
 REQUIRED_EXTENSIONS = ('VK_KHR_swapchain', 'VK_KHR_push_descriptor', 'VK_EXT_vertex_attribute_divisor',
                        'VK_EXT_robustness2')
 REQUIRED_FEATURES = ('robustBufferAccess2', 'robustImageAccess2', 'nullDescriptor')  # of VK_EXT_robustness2
+REQUIRED_DIVISOR_FEATURES = ('vertexAttributeInstanceRateDivisor',)  # of VK_EXT_vertex_attribute_divisor
 DISCRETE, CPU = 2, 4  # VkPhysicalDeviceType
 TYPES = {0: 'other', 1: 'integrated', 2: 'discrete', 3: 'virtual', 4: 'cpu'}
 VENDORS = (0x10DE, 0x1002, 0x8086)  # NVIDIA, AMD, Intel: not virtual displays, remote desktops or DisplayLink
@@ -48,6 +49,8 @@ def missing(device):
     lacking += [name for name in REQUIRED_EXTENSIONS if name not in device['extensions']]
     if 'VK_EXT_robustness2' in device['extensions']:
         lacking += [name for name in REQUIRED_FEATURES if not device['features'].get(name)]
+    if 'VK_EXT_vertex_attribute_divisor' in device['extensions']:
+        lacking += [name for name in REQUIRED_DIVISOR_FEATURES if not device['features'].get(name)]
     return lacking
 
 
@@ -123,6 +126,12 @@ class Robustness2Features(c.Structure):
     _fields_ = [('sType', c.c_uint32), ('pNext', c.c_void_p)] + [(name, c.c_uint32) for name in REQUIRED_FEATURES]
 
 
+class VertexAttributeDivisorFeatures(c.Structure):
+    _fields_ = [('sType', c.c_uint32), ('pNext', c.c_void_p),
+                ('vertexAttributeInstanceRateDivisor', c.c_uint32),
+                ('vertexAttributeInstanceRateZeroDivisor', c.c_uint32)]
+
+
 class Features2(c.Structure):
     _fields_ = [('sType', c.c_uint32), ('pNext', c.c_void_p), ('features', c.c_uint32 * 55)]
 
@@ -136,7 +145,7 @@ class MemoryProperties(c.Structure):
                 ('memoryHeaps', MemoryHeap * 16)]
 
 
-FEATURES_2, ROBUSTNESS_2_FEATURES = 1000059000, 1000286000  # VkStructureType
+FEATURES_2, ROBUSTNESS_2_FEATURES, VERTEX_DIVISOR_FEATURES = 1000059000, 1000286000, 1000190002  # VkStructureType
 DEVICE_LOCAL = 1
 
 
@@ -192,11 +201,15 @@ def query():
                 if vk.vkEnumerateDeviceExtensionProperties(handle, None, c.byref(number), listed) in (0, 5):
                     extensions = {e.extensionName.decode('ascii', 'replace') for e in listed[:number.value]}
             features = {}
-            if 'VK_EXT_robustness2' in extensions:
-                robustness = Robustness2Features(ROBUSTNESS_2_FEATURES, None)
+            if ('VK_EXT_robustness2' in extensions and
+                    'VK_EXT_vertex_attribute_divisor' in extensions):
+                divisor = VertexAttributeDivisorFeatures(VERTEX_DIVISOR_FEATURES, None, 0, 0)
+                robustness = Robustness2Features(ROBUSTNESS_2_FEATURES,
+                                                 c.cast(c.pointer(divisor), c.c_void_p))
                 chain = Features2(FEATURES_2, c.cast(c.pointer(robustness), c.c_void_p))
                 vk.vkGetPhysicalDeviceFeatures2(handle, c.byref(chain))
                 features = {name: bool(getattr(robustness, name)) for name in REQUIRED_FEATURES}
+                features.update({name: bool(getattr(divisor, name)) for name in REQUIRED_DIVISOR_FEATURES})
             devices.append({'name': name, 'api': api, 'type': device_type, 'memory': local,
                             'extensions': extensions, 'features': features, 'vendor': vendor,
                             'device_id': device_id})
