@@ -100,6 +100,8 @@ static void attach(GuestThread *t) {
     if (tls_filesz) memcpy(block,tls_template,tls_filesz);
     uint64_t *tcb=(uint64_t *)(block+offset);
     memset(t->dtv,0,sizeof(t->dtv));
+    t->dtv[0]=1;                            /* FreeBSD DTV generation */
+    t->dtv[1]=(uint64_t)(uintptr_t)block;    /* eboot's static TLS (module 1) */
     tcb[0]=(uint64_t)(uintptr_t)tcb;         /* tcb_self */
     tcb[1]=(uint64_t)(uintptr_t)t->dtv;      /* tcb_dtv (per guest thread) */
     tcb[2]=(uint64_t)(uintptr_t)t;           /* tcb_thread */
