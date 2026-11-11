@@ -1352,8 +1352,8 @@ void TemporalUpscaler::CaptureFrameGen() {
     // The motion vectors the upscaler gets: camera and object motion, previous minus current.
     if (const vk::ImageView motion = frame_generator->BeginCapture(cmdbuf, depth_view, w, h)) {
         camera_motion.RecordMotion(cmdbuf, depth_view, motion, w, h);
-        // The camera the upscalers get (far plane 3000 when the projection's is infinite), and
-        // its motion as clip-space matrices.
+        // Use the game's projection-derived far plane (3000 only when the projection is infinite)
+        // and its world-space camera pose for FSR 3.1.
         const auto scene_camera = camera_motion.GetFrameGenerationCamera();
         FrameGenCamera camera{};
         camera.position = scene_camera.position;
