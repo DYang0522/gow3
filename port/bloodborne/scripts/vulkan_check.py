@@ -281,7 +281,7 @@ def windows_adapters():
 def main():
     adapters = windows_adapters()
     loader, devices = query()
-    result = evaluate(loader, devices, os.environ.get('BB_GPU_ID'), adapters)
+    result = evaluate(loader, devices, os.environ.get('BB_GPU_ID') or os.environ.get('SPARTAN_GPU_ID'), adapters)
     print(json.dumps(result, ensure_ascii=False))
     return 0 if result['ok'] else 2
 
