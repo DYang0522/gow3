@@ -6,7 +6,10 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
-#ifdef _WIN32
+#ifdef BB_PORT_BUILD
+#include "bbport_toggles.h"
+#endif
+#if defined(_WIN32) && !defined(BB_PORT_BUILD)
 // spartanport (Windows): no signals. The loader's exception handler resumes the faulting thread
 // in spartanport_longjmp (src/compat_win.c: no unwinding through the faulting frames).
 typedef unsigned long long sigjmp_buf[32];
@@ -94,10 +97,22 @@ enum : std::uint64_t {
     // Bits 20-29 are used as raw debug toggles by the camera/object motion and the upscaler.
 };
 inline bool Disabled(std::uint64_t bit) {
+#ifdef BB_PORT_BUILD
+    // Common GOW3 GPU optimizations read the Bloodborne runtime's toggle mask. The three
+    // GOW3-only bits below overlap Bloodborne's Z-pass/GC/arena controls, so keep those
+    // optimizations enabled rather than interpreting another game's toggle.
+    if (bit == PartialHeightViews || bit == ExactReadbackWaits || bit == DiskShaders)
+        return false;
+    return BbToggle::Disabled(bit);
+#else
     return (__atomic_load_n(&runtime_disabled_optimizations, __ATOMIC_RELAXED) & bit) != 0;
+#endif
 }
 } // namespace SpartanToggle
 
+#ifdef BB_PORT_BUILD
+namespace SpartanStats = BbStats;
+#else
 namespace SpartanStats {
 /// Guest writes caught by page protection, and pages currently left unprotected as hot.
 inline std::atomic<std::uint64_t> tracker_faults{0};
@@ -160,3 +175,4 @@ inline std::atomic<std::uint64_t> gpu_signal_faults{0};
 inline std::atomic<std::uint64_t> protect_calls{0}, protect_pages{0}, protect_revoke_calls{0},
     protect_revoke_pages{0};
 } // namespace SpartanStats
+#endif

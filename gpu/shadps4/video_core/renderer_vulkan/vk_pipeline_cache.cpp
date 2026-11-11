@@ -10,7 +10,9 @@
 #include <ranges>
 #include <string>
 #include <unordered_set>
+#ifndef BB_PORT_BUILD
 #include "spartanport_overlay.h"
+#endif
 #include "spartanport_threads.h"
 
 #include "common/hash.h"
@@ -23,7 +25,9 @@
 #include "shader_recompiler/info.h"
 #include "shader_recompiler/recompiler.h"
 #include "shader_recompiler/runtime_info.h"
+#ifndef BB_PORT_BUILD
 #include "spartanport_settings.h"
+#endif
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/cache_storage.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
@@ -551,7 +555,9 @@ void PipelineCache::ReportCompiles() {
     if (compiles_started == compiles_reported && pending == pending_reported) {
         return;
     }
+#ifndef BB_PORT_BUILD
     SpartanOverlay::NoteShaderCompiles(pending, u32(compiles_started - compiles_reported));
+#endif
     compiles_reported = compiles_started;
     pending_reported = pending;
 }
@@ -656,7 +662,11 @@ void PipelineCache::FinishCompilations() {
 }
 
 bool PipelineCache::AsyncCompilation() const {
+#ifdef BB_PORT_BUILD
+    return compiler;
+#else
     return compiler && SpartanSettings::Get().async_shaders.load(std::memory_order_relaxed);
+#endif
 }
 
 void PipelineCache::SeedWorkerCaches() {
