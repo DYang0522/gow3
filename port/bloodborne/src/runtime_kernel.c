@@ -13,6 +13,7 @@
 #include <unistd.h>
 #include <sys/time.h>
 #include <x86intrin.h>
+#include <elf.h>
 #ifndef _WIN32
 #include <sys/random.h>
 #include <sys/resource.h>
@@ -327,6 +328,32 @@ static ABI int32_t posix_key_create(uint32_t *k,KeyDestructor d) { int32_t r=key
 static ABI int32_t posix_key_delete(uint32_t k) { int32_t r=key_delete(k); return r ? r&0xffff : 0; }
 static ABI int32_t posix_key_set(uint32_t k,void *v) { int32_t r=key_set(k,v); return r ? r&0xffff : 0; }
 
+/* FreeBSD dl_phdr_info prefix used by __elf_phdr_match_addr. */
+typedef struct {
+    Elf64_Addr dlpi_addr;
+    const char *dlpi_name;
+    const Elf64_Phdr *dlpi_phdr;
+    Elf64_Half dlpi_phnum;
+} GuestDlPhdrInfo;
+static ABI int32_t elf_phdr_match_addr(const GuestDlPhdrInfo *info,const void *address) {
+    if (!info || !info->dlpi_phdr || !address) return 0;
+    uintptr_t target=(uintptr_t)address;
+    for (Elf64_Half i=0;i<info->dlpi_phnum;++i) {
+        const Elf64_Phdr *ph=&info->dlpi_phdr[i];
+        if (ph->p_type!=PT_LOAD) continue;
+        uintptr_t start=(uintptr_t)info->dlpi_addr+(uintptr_t)ph->p_vaddr;
+        if (target>=start && target-start<ph->p_memsz) return 1;
+    }
+    return 0;
+}
+/* Module metadata is not exposed by this static loader; report ESRCH for unknown images. */
+static ABI int32_t module_info_from_addr(const void *address,int32_t flags,void *info) {
+    (void)address;
+    if (flags>=3) return ERR(22);
+    if (!info) return ERR(14);
+    return ERR(3);
+}
+
 static const RuntimeExport exports[]={
     {"sceKernelClockGettime",kernel_clock_gettime}, {"clock_gettime",posix_clock_gettime},
     {"clock_getres",posix_clock_getres},
@@ -342,6 +369,8 @@ static const RuntimeExport exports[]={
     {"_exit",hard_exit},
     {"sceKernelDebugRaiseException",raise_exception},
     {"sceKernelDebugRaiseExceptionOnReleaseMode",raise_exception},
+    {"sceKernelGetModuleInfoFromAddr",module_info_from_addr},
+    {"__elf_phdr_match_addr",elf_phdr_match_addr},
     {"sceKernelPrintBacktraceWithModuleInfo",print_backtrace},
     {"signal",guest_signal}, {"sigprocmask",guest_sigprocmask}, {"_sigprocmask",guest_sigprocmask},
     {"sigfillset",guest_sigfillset}, {"sigemptyset",guest_sigemptyset},
