@@ -114,6 +114,12 @@ if [[ $groups != unknown && ,$groups, != *,fps,* ]]; then fps=30; fi
 if [[ -n ${BB_PROBE:-} ]]; then caps=$(dirname -- "$BB_PROBE")/bb-gpu-capabilities
 elif [[ -n ${BB_PREBUILT:-} ]]; then caps=bin/bb-gpu-capabilities
 else caps="$repo_root/out/bb-gpu-capabilities"; fi
+# Fail before launching the guest when the selected adapter lacks a Vulkan feature the renderer
+# requires; the diagnostic reports the exact missing extension/feature rather than a device-create error.
+if ! "$PYTHON" scripts/vulkan_check.py; then
+    echo 'The selected Vulkan device cannot run Bloodborne with this driver.' >&2
+    exit 1
+fi
 # bbport.ini output_res other than 1080p (720p for the Steam Deck, 1440p, 2160p): the whole game
 # renders at the preset's size of the output (a patch), the upscaler fills the output, the UI is
 # drawn at the output size. Preset and output changes need a restart.
