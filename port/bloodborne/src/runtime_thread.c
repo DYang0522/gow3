@@ -147,7 +147,9 @@ GuestThread *runtime_thread_current(void) {
  * a TCB/TLS like guest threads; the record lives until process exit. */
 void runtime_thread_attach_host(const char *name) {
     GuestThread *t=runtime_thread_current();
-    snprintf(t->name,sizeof(t->name),"%s",name ? name : "host");
+    /* Do not rename a guest-owned thread when an HLE callback originates there. */
+    if (t->host_owned && !t->host_main)
+        snprintf(t->name,sizeof(t->name),"%s",name ? name : "host");
 }
 uint64_t *runtime_thread_dtv(void) { return runtime_thread_current()->dtv; }
 void runtime_thread_detach_guest(void) {
