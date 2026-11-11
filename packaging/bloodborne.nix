@@ -63,7 +63,8 @@ pkgs.stdenv.mkDerivation {
                   mesa pkgs.vulkan-loader ] ++ map builtins.storePath runtimePaths;
   dontBuild = true;
   dontConfigure = true;
-  stripDebugList = [ "share/bbport/bin/gpu" ];
+  # Build.sh uses -g for diagnostics; strip debug sections from every packaged runtime ELF.
+  stripDebugList = [ "share/bbport/bin" ];
   dontPatchELF = true;
   dontWrapGApps = true;
   installPhase = ''
