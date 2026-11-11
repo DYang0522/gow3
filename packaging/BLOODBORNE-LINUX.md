@@ -2,6 +2,16 @@
 
 The Linux port requires Vulkan 1.3. An AMD Radeon R9 290X is a GCN/GFX7 GPU. Mesa's RADV driver documents Vulkan 1.3 support for GFX6–GFX7 GPUs.
 
+## Start from the source tree
+
+From the repository root, run:
+
+```sh
+nix-shell shell.nix --run 'bash port/bloodborne/run.sh'
+```
+
+The launcher starts the same script with the selected `BB_GAME_DIR`; the default game folder is `../CUSA03173` beside the repository. Build outputs stay in the repository's `out/`, while runtime files and saves stay under `port/bloodborne/` unless `BB_DATA_DIR` or `BB_USER_DIR` is set.
+
 ## Kernel driver
 
 RADV requires the Linux `amdgpu` kernel driver. Older kernels may bind GFX6/GFX7 cards to the legacy `radeon` driver instead. Check the active driver with:
