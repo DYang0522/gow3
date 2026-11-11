@@ -125,7 +125,7 @@ static void attach(GuestThread *t) {
     uint64_t *tcb=(uint64_t *)(block+offset);
     memset(t->dtv,0,sizeof(t->dtv));
     t->dtv[0]=1;                            /* FreeBSD DTV generation */
-    t->dtv[1]=1;                            /* One static TLS segment: the eboot. */
+    t->dtv[1]=7;                            /* DTV size: module IDs 1 through 7. */
     t->dtv[2]=(uint64_t)(uintptr_t)block;    /* eboot's static TLS (module 1). */
     tcb[0]=(uint64_t)(uintptr_t)tcb;         /* tcb_self */
     tcb[1]=(uint64_t)(uintptr_t)t->dtv;      /* tcb_dtv (per guest thread) */
