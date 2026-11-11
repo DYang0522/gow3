@@ -9,7 +9,7 @@ Exports are matched by (NID, library identity, module identity). Imports of
 libSceLibcInternal are served by libc.prx's same-NID exports: the internal
 library is not shipped with the game and exposes the same functions.
 On Windows the eboot's red-zone leaf stores then run red-zone-safe (patches/redzone.json).
-Output: out/boot-linked.bin (format BBPROBE5) and out/link.json.
+Output: out/boot-linked.bin (format BBPROBE6) and out/link.json.
 """
 import bisect
 import collections
