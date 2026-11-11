@@ -42,23 +42,12 @@ static ABI void guest_set_heap_api(void **api) {
 }
 void **runtime_application_heap_api(void) { return application_heap_api; }
 static void *module_tls_alloc(size_t size,uint64_t alignment) {
-    if (alignment<16) alignment=16;
-    if (alignment>4096 || (alignment&(alignment-1)) || size>SIZE_MAX-(size_t)alignment) return NULL;
-    size_t rounded=(size+(size_t)alignment-1)&~((size_t)alignment-1);
-    if (!rounded) rounded=(size_t)alignment;
-#ifdef _WIN32
-    return _aligned_malloc(rounded,(size_t)alignment);
-#else
-    void *block=NULL;
-    return posix_memalign(&block,(size_t)alignment,rounded) ? NULL : block;
-#endif
+    if (alignment>4096 || (alignment>1 && (alignment&(alignment-1)))) return NULL;
+    /* Guest TLS addresses can escape through game objects, so they must fit the PS4 40-bit VA. */
+    return runtime_low_map(size,3);
 }
-static void module_tls_free(void *block) {
-#ifdef _WIN32
-    _aligned_free(block);
-#else
-    free(block);
-#endif
+static void module_tls_free(void *block,size_t size) {
+    runtime_low_unmap(block,size);
 }
 void runtime_set_module_tls(uint64_t module, const void *data, uint64_t filesz, uint64_t memsz,
                             uint64_t align) {
@@ -80,7 +69,7 @@ void runtime_set_libc_tls(const void *data, uint64_t filesz, uint64_t memsz) {
 void runtime_thread_tls_cleanup(void) {
     uint64_t *dtv=runtime_thread_dtv();
     for (unsigned i=2;i<TLS_MODULES;++i) {
-        if (tls_blocks[i]) module_tls_free(tls_blocks[i]);
+        if (tls_blocks[i]) module_tls_free(tls_blocks[i],(size_t)tls_modules[i].memsz);
         tls_blocks[i]=NULL;
         dtv[i+1]=0;
     }
