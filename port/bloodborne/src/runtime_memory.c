@@ -505,6 +505,8 @@ static int direct_range_allocated(uint64_t phys, uint64_t size) {
 }
 
 /* POSIX mmap uses the PS4 flexible-memory pool; file-backed mappings are copied in. */
+static int32_t map_flexible_locked(void **inout,uint64_t size,int prot,int flags);
+static ABI int32_t direct_unmap(void *address,uint64_t size);
 #define GUEST_MAP_FIXED 0x0010
 #define GUEST_MAP_ANON  0x1000
 #define GUEST_MAP_FAILED ((void *)(intptr_t)-1)
@@ -558,8 +560,8 @@ static ABI int32_t posix_msync(void *address,uint64_t length,int flags) {
     return 0;
 }
 static ABI int32_t kernel_mlock(const void *address,uint64_t length) {
-    if (!address || !length) return ERR(22);
-    return runtime_memory_is_mapped((uintptr_t)address,length) ? 0 : ERR(14);
+    if (!address || !length) return INVALID;
+    return runtime_memory_is_mapped((uintptr_t)address,length) ? 0 : ACCESS;
 }
 
 static ABI uint64_t direct_size(void) { return POOL_SIZE; }
