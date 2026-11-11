@@ -21,6 +21,10 @@ static uint64_t capabilities;
 static _Atomic size_t guards_acquired, guards_released;
 static uint64_t stack_canary;
 static _Atomic size_t memory_calls;
+static int32_t need_libc=1;
+static int32_t need_libc_internal=1;
+static char guest_progname_storage[]="eboot.bin";
+static char *guest_progname=guest_progname_storage;
 /* Dynamic TLS of linked modules: module IDs 2..7 (1 is the eboot's static TLS). */
 #define TLS_MODULES 8
 static struct { const void *data; uint64_t filesz, memsz; } tls_modules[TLS_MODULES];
@@ -202,15 +206,17 @@ static ABI __attribute__((noreturn)) void guest_libc_exit(int status) {
 uintptr_t runtime_resolve(const char *name, int is_data) {
     if (!(capabilities & 1)) return 0;
     if (is_data) {
-        static int32_t need_libc_internal = 1; /* SDK marker variable referenced by Fios2 */
         if (!strcmp(name, "f7uOxY9mM1U#p#J")) return (uintptr_t)&stack_canary;
+        if (!strcmp(name, "P330P3dFF68#q#q")) return (uintptr_t)&need_libc;
         if (!strcmp(name, "ZT4ODD2Ts9o#libSceLibcInternal")) return (uintptr_t)&need_libc_internal;
+        if (!strcmp(name, "djxxOmW6-aw#p#J")) return (uintptr_t)&guest_progname;
         return 0;
     }
     /* Exact scoped imports for CUSA03173; the suffix identifies library/module. */
     if (!strcmp(name, "bzQExy189ZI#q#q")) return (uintptr_t)init_env;
     if (!strcmp(name, "8G2LB+A3rzg#q#q")) return (uintptr_t)guest_atexit;
     if (!strcmp(name, "tsvEmnenz48#q#q")) return (uintptr_t)guest_cxa_atexit;
+    if (!strcmp(name, "kbw4UHHSYy0#p#J")) return (uintptr_t)guest_finalize;
     if (!strcmp(name, "uMei1W9uyNo#q#q")) return (uintptr_t)guest_libc_exit;
     /* Not imported by the current eboot, exposed for ABI tests/future use. */
     if (!strcmp(name, "H2e8t5ScQGc#q#q")) return (uintptr_t)guest_finalize;
