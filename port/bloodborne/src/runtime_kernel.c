@@ -76,13 +76,21 @@ static ABI int32_t posix_clock_getres(uint32_t id,GuestTimespec *ts) {
     if (ts) { ts->sec=t.tv_sec; ts->nsec=t.tv_nsec; }
     return 0;
 }
+/* Normalize the nanosecond borrow before converting to unsigned elapsed time. */
+static uint64_t elapsed_ns(const struct timespec *start,const struct timespec *end) {
+    int64_t seconds=(int64_t)end->tv_sec-(int64_t)start->tv_sec;
+    int64_t nanoseconds=(int64_t)end->tv_nsec-(int64_t)start->tv_nsec;
+    if (nanoseconds<0) { --seconds; nanoseconds+=1000000000; }
+    if (seconds<0) return 0;
+    return (uint64_t)seconds*UINT64_C(1000000000)+(uint64_t)nanoseconds;
+}
 static ABI uint64_t process_time(void) {
     struct timespec t; clock_gettime(CLOCK_MONOTONIC,&t);
-    return (uint64_t)(t.tv_sec-process_start.tv_sec)*1000000+(uint64_t)((t.tv_nsec-process_start.tv_nsec)/1000);
+    return elapsed_ns(&process_start,&t)/1000;
 }
 static ABI uint64_t process_time_counter(void) {
     struct timespec t; clock_gettime(CLOCK_MONOTONIC,&t);
-    return (uint64_t)(t.tv_sec-process_start.tv_sec)*1000000000+(uint64_t)(t.tv_nsec-process_start.tv_nsec);
+    return elapsed_ns(&process_start,&t);
 }
 static ABI uint64_t process_time_frequency(void) { return 1000000000; }
 static ABI uint64_t read_tsc(void) { return __rdtsc(); }
@@ -97,7 +105,7 @@ static ABI uint64_t tsc_frequency(void) {
         nanosleep(&nap,NULL);
 #endif
         clock_gettime(CLOCK_MONOTONIC,&b); uint64_t t1=__rdtsc();
-        uint64_t ns=(uint64_t)(b.tv_sec-a.tv_sec)*1000000000+(uint64_t)(b.tv_nsec-a.tv_nsec);
+        uint64_t ns=elapsed_ns(&a,&b);
         tsc_hz=(t1-t0)*1000000000/(ns ? ns : 1);
     }
     return tsc_hz;
