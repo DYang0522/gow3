@@ -7,8 +7,17 @@
 #include <cstring>
 #include <string>
 #include <string_view>
+#include <SDL3/SDL.h>
 
 namespace BbSettings {
+
+unsigned DisplayRefreshHz() {
+    const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetPrimaryDisplay());
+    const unsigned rate = mode && mode->refresh_rate > 0
+                              ? static_cast<unsigned>(mode->refresh_rate + 0.5f)
+                              : 60u;
+    return std::max(rate, 60u);
+}
 
 namespace {
 

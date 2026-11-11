@@ -6,7 +6,11 @@
 #include <string>
 #include "common/types.h"
 
+#ifdef BB_PORT_BUILD
+namespace BbSettings { unsigned DisplayRefreshHz(); }
+#else
 u32 SpartanDisplayRefreshHz(); // spartanportgpu.cpp: primary display refresh rate, 60 when unknown
+#endif
 
 enum GpuReadbacksMode : int { Disabled, Relaxed, Precise };
 
@@ -66,8 +70,12 @@ public:
         static const u32 value = [] {
             const long limit = Number("SPARTAN_FPS_LIMIT", "BB_FPS_LIMIT", -1);
             if (limit >= 0) return u32(limit);
-            return Number("SPARTAN_VBLANK_HZ", "BB_VBLANK_HZ", 60) > 0
-                       ? 0u : std::min<u32>(SpartanDisplayRefreshHz(), 120);
+            if (Number("SPARTAN_VBLANK_HZ", "BB_VBLANK_HZ", 60) > 0) return 0u;
+#ifdef BB_PORT_BUILD
+            return std::min<u32>(BbSettings::DisplayRefreshHz(), 120);
+#else
+            return std::min<u32>(SpartanDisplayRefreshHz(), 120);
+#endif
         }();
         return value;
     }

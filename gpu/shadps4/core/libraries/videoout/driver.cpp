@@ -16,9 +16,11 @@
 #endif
 #include "common/assert.h"
 #include "spartanport_toggles.h"
+#ifndef BB_PORT_BUILD
 #include "spartanport_settings.h"
 #include "spartanport_graphics.h"
 #include "video_core/renderer_vulkan/movie_bars.h"
+#endif
 #include "video_core/renderer_vulkan/vk_frame_capture.h"
 #include "common/debug.h"
 #include "common/thread.h"
@@ -662,28 +664,29 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
 
     Common::AccurateTimer timer{vblank_period};
 
-    // spartanport: frame limit (see EmulatorSettings::GetFrameLimit). A request waits in the queue
-    // until its slot; slots advance by one period (no drift) but never lag behind by more.
-    // spartanport: the in-game menu changes the limit and the engine rate live (SpartanSettings::fps_limit,
-    // engine_fps); the uncapped presets keep their fixed limit, still capped by the engine rate.
-    // SPARTAN_FPS_LIMIT (measurements) is used as given.
-    const bool measured_limit = std::getenv("SPARTAN_FPS_LIMIT") != nullptr;
     const int vblank_hz = int(EmulatorSettings.GetVblankFrequency());
+#ifdef BB_PORT_BUILD
+    // Bloodborne's FPS patches set the guest frame rate at launch. Do not apply GOW3's
+    // engine_fps ceiling or cutscene limiter to this game's VideoOut thread.
+    const auto current_limit = [&] { return EmulatorSettings.GetFrameLimit(); };
+#else
+    // The GOW3 in-game menu changes the limit and engine rate live. SPARTAN_FPS_LIMIT
+    // (measurements) is used as given.
+    const bool measured_limit = std::getenv("SPARTAN_FPS_LIMIT") != nullptr;
     const auto current_limit = [&] {
         if (measured_limit) {
             return EmulatorSettings.GetFrameLimit();
         }
         int limit = vblank_hz == 480 ? int(EmulatorSettings.GetFrameLimit())
                                      : SpartanSettings::Get().fps_limit.load();
-        // fp32-gcn1: a cap under 50 FPS (30 for slow GPUs) is lifted to 60 while a video cutscene
-        // plays, so gameplay stays at a steady 30 and the cutscenes run at the rate they were made
-        // for. SPARTAN_CUTSCENE_60=0 keeps the cap for cutscenes too.
+        // A cap under 50 FPS is lifted to 60 while a video cutscene plays.
         if (SpartanSettings::Get().cutscene_60.load() && limit > 0 && limit < 50 &&
             Vulkan::MovieBars::Cutscenes().Active(Vulkan::MovieBars::NowMs())) {
             limit = 60;
         }
         return u32(SpartanGraphics::PresentLimit(limit, SpartanSettings::EngineFpsNow(), vblank_hz));
     };
+#endif
     u32 frame_limit = current_limit();
     auto frame_period = frame_limit ? std::chrono::nanoseconds(1000000000 / frame_limit)
                                     : std::chrono::nanoseconds(0);
@@ -726,6 +729,10 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
         }
     };
     const auto note_present = [&](const Request& req, std::chrono::steady_clock::time_point now) {
+#ifdef BB_PORT_BUILD
+        (void)req;
+        (void)now;
+#else
         if (!SpartanSettings::Get().adaptive_half.load() || frame_limit < 50) {
             return;
         }
@@ -760,6 +767,7 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
             }
         }
         last_present = now;
+#endif
     };
 
     // fp32-gcn1: vblank pacing. Under a cap below 50 FPS (Fifo or Mailbox), the limiter's own clock drifts
@@ -780,6 +788,7 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
     // the same switch uses even pacing instead: every frame presented for a whole number of
     // refreshes (vk_presenter.cpp). It cannot drift, and needs no report from the screen.
     const auto update_even = [&] {
+#ifndef BB_PORT_BUILD
         u32 want = 0;
         const u32 effective = half_rate && frame_limit ? frame_limit / 2 : frame_limit;
         const int mhz = SpartanGraphics::display_refresh_mhz.load();
@@ -803,6 +812,7 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
                 std::printf("VideoOut: even pacing off\n");
             }
         }
+#endif
     };
     const auto swap_free = [&] {
         if (even < 2 || !separate_swap) {
@@ -812,6 +822,7 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
         return !swap_busy && swap_queue.empty();
     };
     const auto update_pacing = [&] {
+#ifndef BB_PORT_BUILD
         update_even();
         // The effective period counts, so the adaptive half rate (60 -> 30) is paced as well.
         const bool want = SpartanSettings::Get().vblank_pacing.load() && frame_limit != 0 &&
@@ -822,6 +833,7 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
             paced = now_paced;
             std::printf("VideoOut: vblank pacing %s\n", paced ? "on" : "off");
         }
+#endif
     };
     // Moves next_flip to the refresh the last flipped frame reached; false while that frame is
     // still on its way to the screen. Never later than one period after the last flip: on an
@@ -861,7 +873,9 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
     };
 
     while (!token.stop_requested()) {
+#ifndef BB_PORT_BUILD
         SpartanSettings::SyncEngineFps();
+#endif
         if (const u32 limit = current_limit(); limit != frame_limit) {
             frame_limit = limit;
             half_rate = false;
