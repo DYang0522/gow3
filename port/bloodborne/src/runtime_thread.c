@@ -137,7 +137,7 @@ static GuestThread *new_thread(void) {
     GuestThread *t=runtime_low_map(sizeof(*t),3);
     if (!t) return NULL;
     memset(t,0,sizeof(*t));
-    t->attr=(ThreadAttr){.magic=ATTR_MAGIC,.policy=1,.prio=DEFAULT_PRIO,.stack=DEFAULT_STACK,.affinity=0x7f};
+    t->attr=(ThreadAttr){.magic=ATTR_MAGIC,.policy=1,.prio=DEFAULT_PRIO,.stack=DEFAULT_STACK,.guard=4096,.affinity=0x7f};
     return t;
 }
 static void publish(GuestThread *t) {
@@ -372,7 +372,7 @@ static int32_t create(GuestThread **out,ThreadAttr **attr_slot,GuestEntry entry,
     if (attr_error) { runtime_low_unmap(t,sizeof(*t)); return thread_error(attr_error); }
     uint64_t stack=t->attr.stack<MIN_STACK ? MIN_STACK : t->attr.stack;
     /* Stacks below 1 TiB as on PS4; guest code may pack stack addresses. */
-    if (stack>SIZE_MAX-STACK_MARGIN-16383u) {
+    if (stack>SIZE_MAX-STACK_MARGIN-16383u || t->attr.guard>SIZE_MAX-16383u) {
         pthread_attr_destroy(&host); runtime_low_unmap(t,sizeof(*t)); return ERR(12);
     }
     size_t stack_bytes=((size_t)stack+STACK_MARGIN+16383u)&~(size_t)16383u;
@@ -382,11 +382,17 @@ static int32_t create(GuestThread **out,ThreadAttr **attr_slot,GuestEntry entry,
     int stack_error=pthread_attr_setstacksize(&host,stack_bytes);
     if (stack_error) { pthread_attr_destroy(&host); runtime_low_unmap(t,sizeof(*t)); return thread_error(stack_error); }
 #else
-    void *stack_memory=runtime_low_map(stack_bytes,PROT_READ|PROT_WRITE);
+    size_t guard_bytes=((size_t)t->attr.guard+16383u)&~(size_t)16383u;
+    if (guard_bytes>SIZE_MAX-stack_bytes) {
+        pthread_attr_destroy(&host); runtime_low_unmap(t,sizeof(*t)); return ERR(12);
+    }
+    size_t mapping_bytes=stack_bytes+guard_bytes;
+    void *stack_memory=runtime_low_map(mapping_bytes,PROT_READ|PROT_WRITE);
     if (!stack_memory) { pthread_attr_destroy(&host); runtime_low_unmap(t,sizeof(*t)); return ERR(12); }
     t->stack_memory=stack_memory;
-    t->stack_mapping_size=stack_bytes;
-    int stack_error=pthread_attr_setstack(&host,stack_memory,stack_bytes);
+    t->stack_mapping_size=mapping_bytes;
+    int stack_error=guard_bytes && mprotect(stack_memory,guard_bytes,PROT_NONE) ? errno : 0;
+    if (!stack_error) stack_error=pthread_attr_setstack(&host,(unsigned char *)stack_memory+guard_bytes,stack_bytes);
     if (stack_error) {
         release_stack(t);
         pthread_attr_destroy(&host);
