@@ -382,8 +382,15 @@ bool Swapchain::SetSurfaceProperties() {
         return false;
     }
 
-    // Select number of images in swap chain, we prefer one buffer in the background to work on
-    image_count = capabilities.minImageCount + 1;
+    // Keep one image in reserve normally, and two when Bloodborne presents a generated
+    // frame as well as the original game frame.
+#ifdef BB_PORT_BUILD
+    const u32 background_images =
+        PortSettings::Get().frame_gen != PortSettings::FrameGenOff ? 2u : 1u;
+#else
+    constexpr u32 background_images = 1u;
+#endif
+    image_count = capabilities.minImageCount + background_images;
     if (capabilities.maxImageCount > 0) {
         image_count = std::min(image_count, capabilities.maxImageCount);
     }
