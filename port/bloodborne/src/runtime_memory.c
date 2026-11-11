@@ -504,6 +504,64 @@ static int direct_range_allocated(uint64_t phys, uint64_t size) {
     return 1;
 }
 
+/* POSIX mmap uses the PS4 flexible-memory pool; file-backed mappings are copied in. */
+#define GUEST_MAP_FIXED 0x0010
+#define GUEST_MAP_ANON  0x1000
+#define GUEST_MAP_FAILED ((void *)(intptr_t)-1)
+static int posix_memory_errno(int32_t result) {
+    switch ((uint32_t)result&0xffffu) {
+    case 12: return ENOMEM;
+    case 13: return EACCES;
+    case 22: return EINVAL;
+    case 35: return EAGAIN;
+    default: return ENOMEM;
+    }
+}
+static ABI void *posix_mmap(void *address,uint64_t length,int prot,int flags,int fd,int64_t offset) {
+    if (!length || (prot&~0x37) || offset<0 || (offset%PAGE)) {
+        *runtime_errno()=EINVAL; return GUEST_MAP_FAILED;
+    }
+    uint64_t size=align_up(length,PAGE);
+    if (size<length) { *runtime_errno()=ENOMEM; return GUEST_MAP_FAILED; }
+    int anonymous=(flags&GUEST_MAP_ANON)!=0;
+    if (!anonymous && fd<0) { *runtime_errno()=EBADF; return GUEST_MAP_FAILED; }
+    void *mapped=address;
+    int map_flags=(flags&GUEST_MAP_FIXED) ? MAP_FIXED_FLAG : 0;
+    write_lock();
+    int32_t result=map_flexible_locked(&mapped,size,prot,map_flags);
+    write_unlock();
+    flush_hooks();
+    if (result) { *runtime_errno()=posix_memory_errno(result); return GUEST_MAP_FAILED; }
+    if (!anonymous) {
+        int64_t got=runtime_file_pread(fd,mapped,length,offset);
+        if (got<0) {
+            int error=*runtime_errno();
+            direct_unmap(mapped,size);
+            *runtime_errno()=error;
+            return GUEST_MAP_FAILED;
+        }
+        if ((uint64_t)got<length) memset((unsigned char *)mapped+got,0,(size_t)(length-(uint64_t)got));
+    }
+    return mapped;
+}
+static ABI int32_t posix_munmap(void *address,uint64_t length) {
+    int32_t result=direct_unmap(address,length);
+    if (result) { *runtime_errno()=posix_memory_errno(result); return -1; }
+    return 0;
+}
+static ABI int32_t posix_msync(void *address,uint64_t length,int flags) {
+    if (!address || !length || ((uintptr_t)address%PAGE) || (flags&~3) ||
+        !runtime_memory_is_mapped((uintptr_t)address,length)) {
+        *runtime_errno()=EINVAL; return -1;
+    }
+    /* The backing pool is memory-resident; file-backed mappings are private copies. */
+    return 0;
+}
+static ABI int32_t kernel_mlock(const void *address,uint64_t length) {
+    if (!address || !length) return ERR(22);
+    return runtime_memory_is_mapped((uintptr_t)address,length) ? 0 : ERR(14);
+}
+
 static ABI uint64_t direct_size(void) { return POOL_SIZE; }
 static ABI int32_t direct_allocate(int64_t low, int64_t high, uint64_t size,
                                   uint64_t alignment, int type, int64_t *out) {
@@ -758,7 +816,9 @@ static ABI int32_t batch_map(BatchEntry *entries, int count, int *processed) {
 static const RuntimeExport exports[]={
     {"sceKernelGetDirectMemorySize",direct_size}, {"sceKernelAllocateDirectMemory",direct_allocate},
     {"sceKernelMapDirectMemory",direct_map}, {"sceKernelMapNamedDirectMemory",direct_map_named},
-    {"sceKernelReleaseDirectMemory",direct_release}, {"sceKernelMunmap",direct_unmap}, {"munmap",direct_unmap},
+    {"sceKernelReleaseDirectMemory",direct_release}, {"sceKernelMunmap",direct_unmap},
+    {"munmap",posix_munmap}, {"mmap",posix_mmap}, {"msync",posix_msync},
+    {"sceKernelMlock",kernel_mlock},
     {"sceKernelMapFlexibleMemory",map_flexible}, {"sceKernelMapNamedFlexibleMemory",map_flexible_named},
     {"sceKernelReleaseFlexibleMemory",release_flexible}, {"sceKernelReserveVirtualRange",reserve_range},
     {"sceKernelMprotect",kernel_mprotect}, {"sceKernelQueryMemoryProtection",query_protection},
