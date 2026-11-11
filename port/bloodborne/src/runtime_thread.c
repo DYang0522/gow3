@@ -133,6 +133,19 @@ void runtime_thread_attach_host(const char *name) {
     snprintf(t->name,sizeof(t->name),"%s",name ? name : "host");
 }
 uint64_t *runtime_thread_dtv(void) { return runtime_thread_current()->dtv; }
+void runtime_thread_detach_guest(void) {
+    GuestThread *t=current;
+    if (!t || t->host_owned || !t->tls_block) return;
+    set_gs(NULL);
+#ifdef _WIN32
+    _aligned_free(t->tls_block);
+#else
+    free(t->tls_block);
+#endif
+    t->tls_block=NULL;
+    t->tcb=NULL;
+    current=NULL;
+}
 void runtime_thread_attach_main(void) {
     GuestThread *t=runtime_thread_current();
     snprintf(t->name,sizeof(t->name),"main");
@@ -275,6 +288,7 @@ static void *host_start(void *p) {
     if (!exit_setjmp(t)) t->result=t->entry(t->argument);
     runtime_thread_keys_cleanup();
     runtime_thread_tls_cleanup();
+    runtime_thread_detach_guest();
     pthread_mutex_lock(&lock); t->finished=1; ++exited; pthread_mutex_unlock(&lock);
     return t->result;
 }
