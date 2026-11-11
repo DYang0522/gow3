@@ -14,7 +14,7 @@ The launcher starts the same script with the selected `BB_GAME_DIR`; the default
 
 ## Kernel driver
 
-RADV requires the Linux `amdgpu` kernel driver. Older kernels may bind GFX6/GFX7 cards to the legacy `radeon` driver instead. Check the active driver with:
+RADV requires the Linux `amdgpu` kernel driver. Mesa documents that GFX6–GFX7 discrete GPUs switch to `amdgpu` as the default kernel driver starting with Linux 6.19; older kernels may bind the R9 290X to the legacy `radeon` driver instead. Check the active driver with:
 
 ```sh
 lspci -k -s "$(lspci -d 1002:67b0 | head -n1 | cut -d' ' -f1)"
