@@ -378,7 +378,8 @@ static int host_map(uintptr_t address, uint64_t size, int prot, int reserved, ui
 static int host_unmap(uintptr_t address, uint64_t size) { return munmap((void *)address,size); }
 static int host_protect(uintptr_t address, uint64_t size, int prot) { return mprotect((void *)address,size,prot); }
 static void host_discard(uint64_t phys, uint64_t size) {
-    fallocate(pool_fd,FALLOC_FL_PUNCH_HOLE|FALLOC_FL_KEEP_SIZE,(off_t)phys,(off_t)size);
+    if (fallocate(pool_fd,FALLOC_FL_PUNCH_HOLE|FALLOC_FL_KEEP_SIZE,(off_t)phys,(off_t)size))
+        memset(backing_base+phys,0,(size_t)size);
 }
 #endif
 static void queue_hook(int kind, uintptr_t address, uint64_t size) {
