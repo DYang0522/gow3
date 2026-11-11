@@ -483,17 +483,10 @@ private:
     Common::LeastRecentlyUsedCache<ImageId, u64> lru_cache;
     Common::LeastRecentlyUsedCache<u64, u64> sampler_lru_cache;
     const bool readback_linear_images;
-    const bool deferred_readbacks = [] {
-        const char* value = std::getenv("SPARTAN_DEFERRED_READBACK");
-        return value && value[0] == '1';
-    }();
-    /// spartanport: SPARTAN_STALE_READBACK=1 (needs deferred readbacks). A pending copy only blocks CPU
-    /// writes: CPU reads see the version the GPU published last (one frame late) instead of
-    /// waiting for the GPU. Writes still wait, so no byte is lost.
-    const bool stale_readbacks = deferred_readbacks && [] {
-        const char* value = std::getenv("SPARTAN_STALE_READBACK");
-        return value && value[0] == '1';
-    }();
+    const bool deferred_readbacks;
+    /// When enabled, CPU reads may see the previous completed GPU copy rather than waiting for the
+    /// current copy. CPU writes still wait, so no byte is lost.
+    const bool stale_readbacks;
     template <bool track>
     void WatchReadback(VAddr address, u64 size);
     struct ReadbackImageStat {

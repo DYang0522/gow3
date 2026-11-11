@@ -31,13 +31,39 @@ namespace VideoCore {
 static constexpr u64 PageShift = 12;
 static constexpr u64 NumFramesBeforeRemoval = 32;
 
+namespace {
+
+bool DeferredReadbacksEnabled() {
+#ifdef BB_PORT_BUILD
+    // Disabled uses the synchronous path; Relaxed and Precise retain queued GPU-to-RAM copies.
+    return EmulatorSettings.GetReadbacksMode() != GpuReadbacksMode::Disabled;
+#else
+    const char* value = std::getenv("SPARTAN_DEFERRED_READBACK");
+    return value && value[0] == '1';
+#endif
+}
+
+bool StaleReadbacksEnabled() {
+#ifdef BB_PORT_BUILD
+    // Relaxed may serve the previous completed copy to CPU reads; writes still wait for the copy.
+    return EmulatorSettings.GetReadbacksMode() == GpuReadbacksMode::Relaxed;
+#else
+    const char* value = std::getenv("SPARTAN_STALE_READBACK");
+    return value && value[0] == '1';
+#endif
+}
+
+} // namespace
+
 TextureCache::TextureCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& scheduler_,
                            Vulkan::Runtime& runtime_, AmdGpu::Liverpool* liverpool_,
                            BufferCache& buffer_cache_, PageManager& tracker_)
     : instance{instance_}, scheduler{scheduler_}, runtime{runtime_}, liverpool{liverpool_},
       buffer_cache{buffer_cache_}, tracker{tracker_}, blit_helper{instance, scheduler},
       tile_manager{instance, scheduler, runtime, buffer_cache.GetStreamBuffer()},
-      readback_linear_images{EmulatorSettings.IsReadbackLinearImagesEnabled()} {
+      readback_linear_images{EmulatorSettings.IsReadbackLinearImagesEnabled()},
+      deferred_readbacks{DeferredReadbacksEnabled()},
+      stale_readbacks{deferred_readbacks && StaleReadbacksEnabled()} {
 
     std::printf("GPU: deferred image readback %s (64 copies, 64 MiB pending limit)%s\n",
                 deferred_readbacks ? "enabled" : "disabled",
