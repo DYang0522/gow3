@@ -275,9 +275,12 @@ void FrameGenerator::EndCapture(vk::CommandBuffer cmdbuf, std::array<float, 2> j
     capture_jitter = jitter;
     capture_camera = camera;
     const auto capture_now = std::chrono::steady_clock::now();
-    const float dt = std::chrono::duration<float, std::milli>(capture_now - last_capture).count();
+    const float dt = last_capture == std::chrono::steady_clock::time_point{}
+                         ? 16.6f
+                         : std::chrono::duration<float, std::milli>(capture_now - last_capture)
+                               .count();
     last_capture = capture_now;
-    capture_frame_ms = dt > 0 && dt < 200 ? dt : 16.6f;
+    capture_frame_ms = dt > 0.0f && dt < 200.0f ? dt : 16.6f;
 }
 
 void FrameGenerator::CaptureHudless(vk::CommandBuffer cmdbuf, vk::Image source, vk::Format format,
@@ -411,10 +414,11 @@ u32 FrameGenerator::Generate(vk::CommandBuffer& cmdbuf, vk::Image color, vk::Ima
                              vk::ImageUsageFlags color_usage, vk::Image hudless,
                              vk::ImageView hudless_view, u32 width, u32 height,
                              std::span<const Output> outputs) {
-    const auto now = std::chrono::steady_clock::now();
-    float frame_ms = std::chrono::duration<float, std::milli>(now - last_generate).count();
-    last_generate = now;
-    if (!(frame_ms > 0.0f && frame_ms < 200.0f)) frame_ms = 16.6f;
+    // FSR needs the interval between game-scene captures, not the time between presenter
+    // callbacks. The latter can drift when the render/present queues are several frames apart.
+    const float frame_ms = capture_frame_ms > 0.0f && capture_frame_ms < 200.0f
+                               ? capture_frame_ms
+                               : 16.6f;
     while (fsr3 && !fsr3_pending.empty() && scheduler.IsFree(fsr3_pending.front().tick)) {
         ffxVkFsr3_3_1_6FrameGenerationContextRetireFrame(fsr3, fsr3_pending.front().frame_id);
         fsr3_pending.pop_front();
@@ -486,10 +490,15 @@ void FrameGenerator::DestroyFsr3() {
         return;
     }
     scheduler.WaitSubmitted();
-    ffxVkFsr3_3_1_6FrameGenerationContextRetireFrame(fsr3, fsr3_frame_id);
+    // Every recorded frame remains owned by the FSR context until its completion is retired.
+    // Waiting for submitted work makes all outstanding IDs safe to retire before destruction.
+    while (!fsr3_pending.empty()) {
+        ffxVkFsr3_3_1_6FrameGenerationContextRetireFrame(fsr3,
+                                                          fsr3_pending.front().frame_id);
+        fsr3_pending.pop_front();
+    }
     ffxVkFsr3_3_1_6FrameGenerationContextDestroy(fsr3);
     fsr3 = nullptr;
-    fsr3_pending.clear();
 }
 
 u32 FrameGenerator::GenerateFsr3(vk::CommandBuffer cmdbuf, vk::Image color,
