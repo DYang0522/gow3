@@ -27,13 +27,13 @@
 #include <sys/uio.h>
 #endif
 
-typedef struct { uint64_t address, size, flags; } Segment;
+typedef RuntimeImageSegment Segment;
 typedef struct { uint64_t target, kind, value, addend; } Reloc;
 static char (*names)[128];
 static uint64_t import_count;
 static unsigned char *image;
 static size_t page_size;
-typedef struct { uint64_t base, size, init, tls_address, tls_memsz, tls_filesz, tls_module, tls_align; } LinkedModule;
+typedef RuntimeImageModule LinkedModule;
 static LinkedModule modules[16];
 static uint64_t module_count;
 static int entered_game;
@@ -613,6 +613,10 @@ int main(int argc, char **argv) {
         procparam=read64(f);
         if (!memcmp(magic,"BBPROBE4",8)) for (int i=0;i<4;++i) main_tls[i]=read64(f);
     }
+    static const char *const linked_module_names[]={"libc.prx","libSceFios2.prx"};
+    for (uint64_t m=0;m<module_count;++m)
+        modules[m].name=m<sizeof(linked_module_names)/sizeof(*linked_module_names)
+            ? linked_module_names[m] : "linked-module";
     if (linked) {
         if (main_tls[1]>main_tls[2] || main_tls[2]>1024*1024 || main_tls[0]>size ||
             main_tls[1]>size-main_tls[0] || (main_tls[3] & (main_tls[3]-1)) || main_tls[3]>4096)
@@ -685,6 +689,7 @@ int main(int argc, char **argv) {
     bbgpu_pc_menu_set_image(image);
     if (fread(image, 1, size, f) != size || fgetc(f) != EOF) fail("incorrect memory image size");
     fclose(f);
+    runtime_kernel_set_module_map(image,size,entry,segments,(size_t)ns,modules,(size_t)module_count,main_tls);
     runtime_discord_start(image);
     if (!cpu_only) {
         char title[128]="Bloodborne", serial[16]="UNKNOWN", sfo[4096];
