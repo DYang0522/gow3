@@ -19,11 +19,13 @@ import sys
 import time
 
 PORT = Path(__file__).resolve().parent
+REPO_ROOT = PORT.parent.parent
+LAUNCHER_DIR = REPO_ROOT / 'launcher'
 
 
 def prepare_driver_environment(env):
     """The direct/frozen runner needs the same automatic driver lookup as the GUI."""
-    sys.path.insert(0, str(PORT / 'launcher'))
+    sys.path.insert(0, str(LAUNCHER_DIR))
     import bbport_driver_runtime
     return bbport_driver_runtime.configure_environment(env)
 
@@ -111,7 +113,7 @@ TROPHY_HEADINGS = {'1': 'Trophy earned', '8': 'Получен приз', '0': '�
 def write_trophy_text(path, language):
     """The pop-up's texts, read through BB_TROPHY_TEXT: "lang", "heading" and one "id grade name
     description" line per trophy, tab-separated (the translations' line breaks joined)."""
-    sys.path.insert(0, str(PORT / 'launcher'))
+    sys.path.insert(0, str(LAUNCHER_DIR))
     import bbport_trophies
     from bbport_lang_trophies import TRANSLATIONS
     language = str(language or '1')
@@ -139,7 +141,7 @@ def write_trophy_icons(folder, game):
     """<folder>/<id>.rgba for each trophy whose PNG the player's sce_sys/trophy/trophy00.trp holds, read
     through BB_TROPHY_ICONS; a trophy without one keeps the pop-up's cup. Done again only when the
     trophy file changed (source.txt). Nothing of the game is shipped: the pictures come from its copy."""
-    sys.path.insert(0, str(PORT / 'launcher'))
+    sys.path.insert(0, str(LAUNCHER_DIR))
     import bbport_trophies
     from bbport_trophy_icons import TrophyIcons
     from PIL import Image
@@ -390,7 +392,7 @@ def frame_pacing(env, fps):
 
 def find_executable(name):
     """bin/ (packaged), else out/ (built with build.sh)."""
-    for candidate in (PORT / 'bin' / name, PORT / 'out' / name):
+    for candidate in (PORT / 'bin' / name, REPO_ROOT / 'out' / name):
         if candidate.is_file():
             return candidate
     return None
@@ -933,7 +935,7 @@ def main():
         try:
             # No stdin: an inherited pipe (shells such as Git Bash) cost the game its console output.
             if env.get('BB_EXIT_BACKUP') == '1':  # the save as the game left it, also after a crash
-                sys.path.insert(0, str(PORT / 'launcher'))
+                sys.path.insert(0, str(LAUNCHER_DIR))
                 from bbport_exit_backup import run_with_backup
                 return run_with_backup(command, saves_dir, original_game, creationflags=no_console())
             return subprocess.run(command, stdin=subprocess.DEVNULL, creationflags=no_console()).returncode
