@@ -737,7 +737,8 @@ void TemporalUpscaler::RecordTaa(vk::CommandBuffer cmdbuf, vk::ImageView color,
         std::array<std::array<float, 4>, 3> depth;
     } params{jitter, reset ? 1u : 0u,
 #ifdef BB_PORT_BUILD
-             0u,
+             std::getenv("BB_TAA_DIAGNOSTICS") ?
+                 u32(std::clamp(std::atoi(std::getenv("BB_TAA_DIAGNOSTICS")),1,3)) : 0u,
 #else
              std::getenv("SPARTAN_TAA_DIAGNOSTICS") ?
                  u32(std::clamp(std::atoi(std::getenv("SPARTAN_TAA_DIAGNOSTICS")),1,3)) : 0u,
@@ -747,13 +748,11 @@ void TemporalUpscaler::RecordTaa(vk::CommandBuffer cmdbuf, vk::ImageView color,
     // YCoCg clipping, variance clipping, 3x3 reconstruction. Measured in game on 2026-10-02
     // (static and panning camera, interleaved captures): none improved stability beyond run
     // noise; YCoCg clipping and the reconstruction made it worse. Default: all off.
-#ifndef BB_PORT_BUILD
     params.pad |= (SpartanToggle::Disabled(SpartanToggle::TaaTonemapBlend) ? 1u << 8 : 0u) |
                   (SpartanToggle::Disabled(SpartanToggle::TaaClip) ? 2u << 8 : 0u) |
                   (SpartanToggle::Disabled(SpartanToggle::TaaVariance) ? 4u << 8 : 0u) |
                   (SpartanToggle::Disabled(SpartanToggle::TaaFilter) ? 8u << 8 : 0u) |
                   (SpartanToggle::Disabled(SpartanToggle::TaaKeepNearerHistory) ? 16u << 8 : 0u);
-#endif
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, *taa_pipeline);
     if (params.pad & 0xffu) {
         static u32 diagnostic_frames = 0;
@@ -1190,11 +1189,7 @@ void TemporalUpscaler::Run() {
         }
         info.transparencyAndCompositionMask.structSize = sizeof(info.transparencyAndCompositionMask);
         // The GOW3 A/B toggle flips FSR 3's jitter sign; Bloodborne uses the provider default.
-#ifdef BB_PORT_BUILD
-        const float sign = 1.0f;
-#else
         const float sign = SpartanToggle::Disabled(1u << 26) ? -1.0f : 1.0f;
-#endif
         info.jitterOffset = {sign * jitter[0], sign * jitter[1]};
         info.motionVectorScale = {1.0f, 1.0f};
         info.renderSize = {w, h};
@@ -1283,16 +1278,11 @@ void TemporalUpscaler::Run() {
         // Debug (menu or toggle 1 << 28): the reactive mask in red over a darkened frame;
         // or the motion vectors (menu).
         const int debug_view = PortSettings::Get().debug_view;
-#ifdef BB_PORT_BUILD
-        const u32 mode = has_reactive && debug_view == PortSettings::DebugReactive ? 1
-                         : debug_view == PortSettings::DebugMotion ? 2 : 0;
-#else
         const u32 mode = has_reactive && (debug_view == PortSettings::DebugReactive ||
                                           SpartanToggle::Disabled(1u << 28))
                              ? 1
                          : debug_view == PortSettings::DebugMotion ? 2
                                                                  : 0;
-#endif
         cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, *merge_pipeline);
         cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute, *merge_pipeline_layout, 0,
                                     writes);
@@ -1794,11 +1784,7 @@ void TemporalUpscaler::RunScaled() {
     }
 
     info.transparencyAndCompositionMask.structSize = sizeof(info.transparencyAndCompositionMask);
-#ifdef BB_PORT_BUILD
-    const float sign = 1.0f;
-#else
     const float sign = SpartanToggle::Disabled(1u << 26) ? -1.0f : 1.0f;
-#endif
     info.jitterOffset = {sign * jitter[0], sign * jitter[1]};
     info.motionVectorScale = {1.0f, 1.0f};
     info.renderSize = {w, h};
