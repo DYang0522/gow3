@@ -248,7 +248,7 @@ vk::ImageView FrameGenerator::BeginCapture(vk::CommandBuffer cmdbuf, vk::ImageVi
 }
 
 void FrameGenerator::EndCapture(vk::CommandBuffer cmdbuf, std::array<float, 2> jitter,
-                                bool motion_valid, Camera camera) {
+                                bool motion_valid, FrameGenCamera camera) {
     std::array<vk::ImageMemoryBarrier2, 2> to_read{};
     for (u32 i = 0; i < 2; ++i) {
         to_read[i] = {
