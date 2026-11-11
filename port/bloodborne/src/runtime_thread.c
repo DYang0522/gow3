@@ -98,18 +98,27 @@ static void set_gs(void *base) {
     runtime_thread_tcb_offset();
     if (!TlsSetValue(tls_slot,base)) { fprintf(stderr,"STOP: TlsSetValue failed (%lu)\n",GetLastError()); exit(21); }
 }
-#define tls_block_alloc(size) _aligned_malloc(size,64)
 #else
 static void set_gs(void *base) {
     if (syscall(SYS_arch_prctl,ARCH_SET_GS,(unsigned long)base)) { perror("STOP: arch_prctl(ARCH_SET_GS)"); exit(21); }
 }
-#define tls_block_alloc(size) aligned_alloc(64,size)
 #endif
+static unsigned char *tls_block_alloc(size_t size,uint64_t alignment) {
+    if (alignment<64) alignment=64;
+    if (alignment>4096 || (alignment&(alignment-1)) || size>SIZE_MAX-(size_t)alignment) return NULL;
+    size_t rounded=(size+(size_t)alignment-1)&~((size_t)alignment-1);
+#ifdef _WIN32
+    return _aligned_malloc(rounded,(size_t)alignment);
+#else
+    void *block=NULL;
+    return posix_memalign(&block,(size_t)alignment,rounded) ? NULL : block;
+#endif
+}
 /* Build TCB/static TLS for the calling host thread and point GS at it. */
 static void attach(GuestThread *t) {
     uint64_t offset=tls_offset();
     size_t total=offset+256;
-    unsigned char *block=tls_block_alloc((total+63)&~(size_t)63);
+    unsigned char *block=tls_block_alloc(total,tls_align);
     if (!block) { fputs("Cannot allocate guest TLS\n",stderr); exit(1); }
     memset(block,0,total);
     if (tls_filesz) memcpy(block,tls_template,tls_filesz);
