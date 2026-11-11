@@ -9,12 +9,7 @@
 
 namespace BbSettings {
 
-enum Upscaler : int { UpscalerOff = 0, UpscalerFsr3 = 1, UpscalerFsr4 = 2,
-                      UpscalerTaa = 3, UpscalerDlss = 4, UpscalerCount };
-/// FSR 4 v07 uses the same temporal inputs and placement in the frame.
-inline bool IsFsr4(int upscaler) {
-    return upscaler == UpscalerFsr4;
-}
+enum Upscaler : int { UpscalerOff = 0, UpscalerFsr3 = 1, UpscalerTaa = 2, UpscalerCount };
 enum Preset : int { NativeAA = 0, Quality, Balanced, Performance, UltraPerformance, PresetCount };
 enum DebugView : int { DebugNone = 0, DebugReactive = 1, DebugMotion = 2, DebugViewCount };
 /// Frame generation (vk_frame_generation.h): frames generated between two of the game's.
@@ -115,9 +110,6 @@ struct Values {
     std::atomic<bool> mute_unfocused{false};
     /// Keyboard and mouse button prompts: with the device in use (auto), or always one kind.
     std::atomic<int> button_prompts{PromptsAuto};
-    // FSR 4 checks (menu): the provider's auto exposure, the jitter sign it is given.
-    std::atomic<bool> fsr4_auto_exposure{true};
-    std::atomic<bool> fsr4_invert_jitter{false};
     std::atomic<int> active_render_width{1920}, active_render_height{1080};
     /// Applied at start (patches.py); the menu shows when a restart is needed.
     std::atomic<bool> effects[EffectCount]{};
@@ -138,12 +130,6 @@ struct Values {
     /// Live resolution and preset changes (run.sh): 0 off by default (startup patch, fastest
     /// on the Steam Deck and older GPUs), -1 auto (strong discrete GPUs), 1 on. On restart.
     std::atomic<int> live_resolution{0};
-    /// Why FSR 4 cannot run (assets, device features), or null. Set by the renderer.
-    std::atomic<const char*> fsr4_problem{nullptr};
-    std::atomic<bool> fsr4_supported{false};
-    /// DLSS (bbport_dlss.dll, NVIDIA RTX) is ready, or why not (null before the device exists).
-    std::atomic<bool> dlss_supported{false};
-    std::atomic<const char*> dlss_problem{nullptr};
     /// Frame generation and the frames per game frame (2x with FSR 3.1, up to 4x with DLSS on
     /// RTX 50). dlssg_max_multiplier: 1 without DLSS Frame Generation.
     std::atomic<int> frame_gen{FrameGenOff};
@@ -180,10 +166,6 @@ Values& Get();
 
 /// Reads the file, then the environment overrides. Called once at start.
 void Load();
-/// Checks the loaded choice before the first frame; unsupported FSR 4 uses FSR 3.1.
-void ConfigureUpscalerSupport(bool fsr4);
-/// After device creation: DLSS availability; a DLSS setting falls back to FSR 3.1 without it.
-void ConfigureDlssSupport(bool available, const char* problem);
 void SelectFrameGen(int provider);
 void FrameGenFailure(const char* problem);
 /// Startup-patched scene dimensions cannot change until run.sh prepares a new image.
