@@ -660,9 +660,9 @@ bool Instance::CreateDevice() {
             .depthClipEnable = depth_clip_enable_features.depthClipEnable,
         },
         vk::PhysicalDeviceRobustness2FeaturesEXT{
-            .robustBufferAccess2 = true,
-            .robustImageAccess2 = true,
-            .nullDescriptor = true,
+            .robustBufferAccess2 = robustness2_features.robustBufferAccess2,
+            .robustImageAccess2 = robustness2_features.robustImageAccess2,
+            .nullDescriptor = robustness2_features.nullDescriptor,
         },
         vk::PhysicalDeviceVertexInputDynamicStateFeaturesEXT{
             .vertexInputDynamicState = vertex_input_dynamic_features.vertexInputDynamicState,
@@ -685,7 +685,7 @@ bool Instance::CreateDevice() {
             .maintenance5 = feature_chain.get<vk::PhysicalDeviceMaintenance5FeaturesKHR>().maintenance5,
         },
         vk::PhysicalDevicePipelineBinaryFeaturesKHR{
-            .pipelineBinaries = true,
+            .pipelineBinaries = pipeline_binaries,
         },
         vk::PhysicalDeviceMaintenance8FeaturesKHR{
             .maintenance8 = maintenance8_features.maintenance8,
@@ -728,16 +728,16 @@ bool Instance::CreateDevice() {
                 compute_shader_derivatives_features.computeDerivativeGroupLinear,
         },
         vk::PhysicalDeviceShaderMixedFloatDotProductFeaturesVALVE{
-            .shaderMixedFloatDotProductFloat16AccFloat32 = true,
+            .shaderMixedFloatDotProductFloat16AccFloat32 = mixed_float_dot_product,
         },
         vk::PhysicalDevicePipelineExecutablePropertiesFeaturesKHR{
             .pipelineExecutableInfo = pipeline_executable_features.pipelineExecutableInfo,
         },
         vk::PhysicalDevicePresentIdFeaturesKHR{
-            .presentId = true,
+            .presentId = present_wait,
         },
         vk::PhysicalDevicePresentWaitFeaturesKHR{
-            .presentWait = true,
+            .presentWait = present_wait,
         },
     };
     if (!present_wait) {
