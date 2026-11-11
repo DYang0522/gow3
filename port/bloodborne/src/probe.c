@@ -607,7 +607,7 @@ int main(int argc, char **argv) {
         LinkedModule *x=&modules[0];
         module_count=1;
         x->base=read64(f); x->size=read64(f); x->init=read64(f);
-        x->tls_address=read64(f); x->tls_memsz=read64(f); x->tls_filesz=read64(f); x->tls_module=2; nb=read64(f);
+        x->tls_address=read64(f); x->tls_memsz=read64(f); x->tls_filesz=read64(f); x->tls_module=2; x->tls_align=16; nb=read64(f);
         procparam=read64(f);
         if (!memcmp(magic,"BBPROBE4",8)) for (int i=0;i<4;++i) main_tls[i]=read64(f);
     }
