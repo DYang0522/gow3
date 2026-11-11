@@ -42,12 +42,14 @@ typedef struct GuestThread {
     uint64_t *tcb;
     uint64_t dtv[9]; /* FreeBSD DTV: generation, static-segment count, then module slots 1..7. */
     unsigned char *tls_block;
+    void *stack_memory;
+    size_t stack_mapping_size;
     pthread_t host;
     GuestEntry entry;
     void *argument, *result;
     ThreadAttr attr;
     char name[32];
-    int detached, finished, joined, host_owned, host_main;
+    int detached, finished, joined, reaped, host_owned, host_main;
 #ifdef _WIN32
     bb_jmp_buf exit_jump; /* no SEH unwinding through guest frames */
 #else
@@ -176,6 +178,37 @@ static GuestThread *find_thread(void *handle) {
     for (GuestThread *t=threads;t;t=t->next) if (t==handle) { found=t; break; }
     pthread_mutex_unlock(&lock);
     return found;
+}
+static void release_stack(GuestThread *t) {
+    if (!t || !t->stack_memory) return;
+#ifdef _WIN32
+    VirtualFree(t->stack_memory,0,MEM_RELEASE);
+#else
+    munmap(t->stack_memory,t->stack_mapping_size);
+#endif
+    t->stack_memory=NULL;
+    t->stack_mapping_size=0;
+}
+/* Keep detached host pthreads joinable internally so their supplied stacks can be reclaimed. */
+static void reap_finished_detached(void) {
+    for (;;) {
+        pthread_mutex_lock(&lock);
+        GuestThread *candidate=NULL;
+        pthread_t host;
+        for (GuestThread *t=threads;t;t=t->next) {
+            if (!t->host_owned && t->detached && t->finished && !t->reaped) {
+                t->reaped=1;
+                candidate=t;
+                host=t->host;
+                break;
+            }
+        }
+        pthread_mutex_unlock(&lock);
+        if (!candidate) return;
+        int e=pthread_join(host,NULL);
+        if (e) { fprintf(stderr,"STOP: detached host pthread reap failed: %d\n",e); exit(21); }
+        release_stack(candidate);
+    }
 }
 static ThreadAttr *find_attr(ThreadAttr **slot) {
     if (!slot || !*slot) return NULL;
@@ -332,8 +365,19 @@ static int32_t create(GuestThread **out,ThreadAttr **attr_slot,GuestEntry entry,
     pthread_attr_setstacksize(&host,stack_bytes);
 #else
     void *stack_memory=runtime_low_map(stack_bytes,PROT_READ|PROT_WRITE);
-    if (stack_memory) pthread_attr_setstack(&host,stack_memory,stack_bytes);
-    else pthread_attr_setstacksize(&host,stack_bytes);
+    if (stack_memory) {
+        t->stack_memory=stack_memory;
+        t->stack_mapping_size=(stack_bytes+16383u)&~(size_t)16383u;
+        int stack_error=pthread_attr_setstack(&host,stack_memory,stack_bytes);
+        if (stack_error) {
+            munmap(stack_memory,t->stack_mapping_size);
+            t->stack_memory=NULL;
+            t->stack_mapping_size=0;
+            pthread_attr_setstacksize(&host,stack_bytes);
+        }
+    } else {
+        pthread_attr_setstacksize(&host,stack_bytes);
+    }
 #endif
     publish(t);
     /* Publish the handle before the thread can run and inspect itself. */
@@ -341,8 +385,8 @@ static int32_t create(GuestThread **out,ThreadAttr **attr_slot,GuestEntry entry,
     int e=pthread_create(&t->host,&host,host_start,t);
     pthread_attr_destroy(&host);
     if (e) { fprintf(stderr,"STOP: host pthread_create failed: %d\n",e); exit(21); }
-    if (t->detached) pthread_detach(t->host);
     pthread_mutex_lock(&lock); ++created; pthread_mutex_unlock(&lock);
+    reap_finished_detached();
     printf("Runtime: guest thread '%s' created (stack=%llu, prio=%d)\n",t->name,(unsigned long long)stack,t->attr.prio);
     return 0;
 }
@@ -364,7 +408,9 @@ static ABI int32_t thread_join(GuestThread *t,void **result) {
     int e=pthread_join(t->host,&value);
     if (e) { fprintf(stderr,"STOP: host pthread_join failed: %d\n",e); exit(21); }
     if (result) *result=t->result;
-    pthread_mutex_lock(&lock); ++joined_count; pthread_mutex_unlock(&lock);
+    release_stack(t);
+    pthread_mutex_lock(&lock); t->reaped=1; ++joined_count; pthread_mutex_unlock(&lock);
+    reap_finished_detached();
     return 0;
 }
 static ABI int32_t thread_detach(GuestThread *t) {
@@ -375,13 +421,8 @@ static ABI int32_t thread_detach(GuestThread *t) {
     if (!found) { pthread_mutex_unlock(&lock); return ERR(3); }
     if (t->detached || t->joined) { pthread_mutex_unlock(&lock); return ERR(22); }
     t->detached=1;
-    pthread_t host=t->host;
-    int host_owned=t->host_owned;
     pthread_mutex_unlock(&lock);
-    if (!host_owned) {
-        int e=pthread_detach(host);
-        if (e) { fprintf(stderr,"STOP: host pthread_detach failed: %d\n",e); exit(21); }
-    }
+    reap_finished_detached();
     return 0;
 }
 static ABI __attribute__((noreturn)) void thread_exit(void *value) {
@@ -478,6 +519,7 @@ uintptr_t runtime_thread_resolve(const char *name) {
     return 0;
 }
 void runtime_thread_report(void) {
+    reap_finished_detached();
     pthread_mutex_lock(&lock);
     printf("Runtime: guest threads created=%zu, exited=%zu, joined=%zu\n",created,exited,joined_count);
     pthread_mutex_unlock(&lock);
