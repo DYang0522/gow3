@@ -8,7 +8,9 @@
 #include <condition_variable>
 
 #include "core/libraries/videoout/buffer.h"
+#ifndef BB_PORT_BUILD
 #include "video_core/renderer_vulkan/host_passes/fsr_pass.h"
+#endif
 #include "video_core/renderer_vulkan/host_passes/pp_pass.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
@@ -57,9 +59,11 @@ public:
         return pp_settings;
     }
 
+#ifndef BB_PORT_BUILD
     HostPasses::FsrPass::Settings& GetFsrSettingsRef() {
         return fsr_settings;
     }
+#endif
 
     Frontend::WindowSDL& GetWindow() const {
         return window;
@@ -117,8 +121,10 @@ private:
 
     Frontend::WindowSDL& window;
     Instance instance;
+#ifndef BB_PORT_BUILD
     HostPasses::FsrPass fsr_pass;
     HostPasses::FsrPass::Settings fsr_settings{};
+#endif
     HostPasses::PostProcessingPass::Settings pp_settings{};
     HostPasses::PostProcessingPass pp_pass;
     AmdGpu::Liverpool* liverpool;
