@@ -18,8 +18,8 @@
 #include "bbport_settings.h"
 #else
 #include "spartanport_settings.h"
-#include "spartanport_toggles.h"
 #endif
+#include "spartanport_toggles.h"
 #include "ffx_vk_portable.h"
 #include "video_core/host_shaders/upscale_merge_comp.h"
 #include "video_core/host_shaders/upscale_reactive_comp.h"
@@ -1152,7 +1152,11 @@ void TemporalUpscaler::Run() {
         #ifdef BB_PORT_BUILD
         const float sign = PortSettings::Get().fsr4_invert_jitter ? -1.0f : 1.0f;
 #else
-        const float sign = SpartanToggle::Disabled(1u << 26) ? -1.0f : 1.0f;
+    #ifdef BB_PORT_BUILD
+    const float sign = PortSettings::Get().fsr4_invert_jitter ? -1.0f : 1.0f;
+#else
+    const float sign = SpartanToggle::Disabled(1u << 26) ? -1.0f : 1.0f;
+#endif
 #endif
         info.jitterOffset = {sign * jitter[0], sign * jitter[1]};
         info.motionVectorScale = {1.0f, 1.0f};
@@ -1964,8 +1968,12 @@ bool TemporalUpscaler::RecordFsr4(vk::CommandBuffer cmdbuf, Fsr4Upscaler::Image 
                                   float frame_ms) {
     const auto& settings = PortSettings::Get();
     // Same jitter convention as FSR 3; the menu (or toggle 1 << 26) flips it for tests.
+#ifdef BB_PORT_BUILD
+    const float sign = settings.fsr4_invert_jitter.load() ? -1.0f : 1.0f;
+#else
     const float sign =
         SpartanToggle::Disabled(1u << 26) != settings.fsr4_invert_jitter.load() ? -1.0f : 1.0f;
+#endif
     const bool ok = fsr4->Record({
         .cmdbuf = cmdbuf,
         .color = color,
@@ -2028,7 +2036,11 @@ bool TemporalUpscaler::RecordDlss(vk::CommandBuffer cmdbuf, const Dlss::Resource
     }
     if (ok) {
         // The jitter and motion vectors FSR 3 gets: render pixels, current to previous.
+#ifdef BB_PORT_BUILD
+        const float sign = PortSettings::Get().fsr4_invert_jitter ? -1.0f : 1.0f;
+#else
         const float sign = SpartanToggle::Disabled(1u << 26) ? -1.0f : 1.0f;
+#endif
         const auto& settings = PortSettings::Get();
         ok = dlss->Evaluate(cmdbuf, {
             .color = color,
