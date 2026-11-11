@@ -419,9 +419,16 @@ static ABI int32_t thread_detach(GuestThread *t) {
     GuestThread *found=NULL;
     for (GuestThread *it=threads;it;it=it->next) if (it==t) { found=it; break; }
     if (!found) { pthread_mutex_unlock(&lock); return ERR(3); }
-    if (t->detached || t->joined) { pthread_mutex_unlock(&lock); return ERR(22); }
+    if (t->detached || t->joined || t->host_main) { pthread_mutex_unlock(&lock); return ERR(22); }
     t->detached=1;
+    pthread_t host=t->host;
+    int host_owned=t->host_owned;
     pthread_mutex_unlock(&lock);
+    /* HLE-owned host threads have no supplied stack, so detach them directly. */
+    if (host_owned) {
+        int e=pthread_detach(host);
+        if (e) { fprintf(stderr,"STOP: host pthread_detach failed: %d\n",e); exit(21); }
+    }
     reap_finished_detached();
     return 0;
 }
