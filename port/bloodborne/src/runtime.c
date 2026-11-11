@@ -22,6 +22,8 @@ static _Atomic size_t guards_acquired, guards_released;
 static uint64_t stack_canary;
 static _Atomic size_t memory_calls;
 static int32_t need_libc_internal=1;
+static char guest_progname_storage[]="eboot.bin";
+static char *guest_progname=guest_progname_storage;
 /* Dynamic TLS of linked modules: module IDs 2..7 (1 is the eboot's static TLS). */
 #define TLS_MODULES 8
 static struct { const void *data; uint64_t filesz, memsz; } tls_modules[TLS_MODULES];
@@ -231,6 +233,7 @@ uintptr_t runtime_resolve(const char *name, int is_data) {
     if (is_data) {
         if (!strcmp(name, "f7uOxY9mM1U#p#J")) return (uintptr_t)&stack_canary;
         if (!strcmp(name, "ZT4ODD2Ts9o#libSceLibcInternal")) return (uintptr_t)&need_libc_internal;
+        if (!strcmp(name, "djxxOmW6-aw#p#J")) return (uintptr_t)&guest_progname;
         return 0;
     }
     /* Exact scoped imports for CUSA03173; the suffix identifies library/module. */
