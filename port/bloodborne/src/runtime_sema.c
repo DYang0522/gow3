@@ -70,13 +70,22 @@ static ABI int32_t sem_create(uint32_t *out,const char *name,uint32_t attr,
     pthread_mutex_unlock(&lock);
     return 0;
 }
+/* Grant tokens only to the head of the FIFO. Also called after enqueueing: a new
+ * waiter must not bypass an older waiter, even when tokens are already available. */
+static void grant_waiters(Sema *s) {
+    while (s->first && s->first->need<=s->count) {
+        Waiter *w=s->first;
+        s->count-=w->need; s->first=w->next; w->done=1;
+        host_check(pthread_cond_signal(&w->event));
+    }
+}
 static int32_t wait_count(uint32_t id,int32_t need,uint32_t *timeout,int block) {
     pthread_mutex_lock(&lock);
     Sema *s=find(id);
     int32_t result=0;
     if (!s) result=ERR(3);
     else if (need<=0 || need>s->maximum) result=ERR(22);
-    else if (s->count>=need) { s->count-=need; ++acquired; }
+    else if (s->count>=need && !s->first) { s->count-=need; ++acquired; }
     else if (!block) result=ERR(16);
     else if (timeout && !*timeout) { result=ERR(60); ++timed_out; }
     else {
@@ -92,6 +101,7 @@ static int32_t wait_count(uint32_t id,int32_t need,uint32_t *timeout,int block) 
         Waiter **tail=&s->first;
         while (*tail) tail=&(*tail)->next;
         *tail=&w; ++s->active;
+        grant_waiters(s);
         uint64_t deadline=timeout ? now_ns()+(uint64_t)*timeout*1000 : 0;
         struct timespec end={.tv_sec=(time_t)(deadline/1000000000),.tv_nsec=(long)(deadline%1000000000)};
         while (!w.done) {
@@ -124,13 +134,7 @@ static ABI int32_t sem_signal(uint32_t id,int32_t count) {
     else if (count<=0 || count>s->maximum-s->count) result=ERR(22);
     else {
         s->count+=count; ++signaled;
-        /* Preserve the queue order: a later, smaller request must not bypass the
-           first waiter merely because the current signal cannot satisfy it. */
-        while (s->first && s->first->need<=s->count) {
-            Waiter *w=s->first;
-            s->count-=w->need; s->first=w->next; w->done=1;
-            host_check(pthread_cond_signal(&w->event));
-        }
+        grant_waiters(s);
     }
     pthread_mutex_unlock(&lock);
     return result;
