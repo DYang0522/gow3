@@ -249,6 +249,16 @@ vk::ImageView FrameGenerator::BeginCapture(vk::CommandBuffer cmdbuf, vk::ImageVi
 
 void FrameGenerator::EndCapture(vk::CommandBuffer cmdbuf, std::array<float, 2> jitter,
                                 bool motion_valid, FrameGenCamera camera) {
+    // Sample every game-scene attempt, including frames whose camera/history is invalid.
+    // Otherwise one skipped frame is folded into the next successful interval.
+    const auto capture_now = std::chrono::steady_clock::now();
+    const float dt = last_capture == std::chrono::steady_clock::time_point{}
+                         ? 16.6f
+                         : std::chrono::duration<float, std::milli>(capture_now - last_capture)
+                               .count();
+    last_capture = capture_now;
+    capture_frame_ms = dt > 0.0f && dt < 200.0f ? dt : 16.6f;
+
     std::array<vk::ImageMemoryBarrier2, 2> to_read{};
     for (u32 i = 0; i < 2; ++i) {
         to_read[i] = {
@@ -274,13 +284,6 @@ void FrameGenerator::EndCapture(vk::CommandBuffer cmdbuf, std::array<float, 2> j
     captured = true;
     capture_jitter = jitter;
     capture_camera = camera;
-    const auto capture_now = std::chrono::steady_clock::now();
-    const float dt = last_capture == std::chrono::steady_clock::time_point{}
-                         ? 16.6f
-                         : std::chrono::duration<float, std::milli>(capture_now - last_capture)
-                               .count();
-    last_capture = capture_now;
-    capture_frame_ms = dt > 0.0f && dt < 200.0f ? dt : 16.6f;
 }
 
 void FrameGenerator::CaptureHudless(vk::CommandBuffer cmdbuf, vk::Image source, vk::Format format,
