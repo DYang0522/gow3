@@ -150,6 +150,9 @@ private:
     vk::Format view_format;
     vk::PresentModeKHR present_mode;
     bool vsync = true; ///< the setting present_mode was chosen for
+#ifdef BB_PORT_BUILD
+    bool present_mode_initialized = false;
+#endif
     u64 last_present_id = 0;
     vk::Extent2D extent;
     vk::SurfaceTransformFlagBitsKHR transform;
