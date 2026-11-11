@@ -21,8 +21,10 @@
 
 #include "common/types.h"
 #include "video_core/renderer_vulkan/vk_common.h"
+#ifndef BB_PORT_BUILD
 #include "video_core/renderer_vulkan/vk_dlss.h"
 #include "video_core/renderer_vulkan/vk_fsr4.h"
+#endif
 #include "video_core/texture_cache/image.h"
 
 struct FfxVkPortableUpscaleContext;
@@ -177,17 +179,16 @@ private:
     void CreatePipelines();
     /// Records the reactive mask pass; false when there is no snapshot this frame.
     bool RecordReactive(vk::ImageView color_view);
-    /// FSR 4 is selected, possible in this session (not SPARTAN_RENDER_RES) and has not failed.
+    /// Provider selection is only compiled into the GOW3/SpartanPort target.
+#ifndef BB_PORT_BUILD
     [[nodiscard]] bool UseFsr4() const;
-    /// spartanport: DLSS selected and the bridge is ready (NVIDIA RTX, spartanport_dlss.dll).
     [[nodiscard]] bool UseDlss() const;
-    /// Records DLSS into `cmdbuf` (output in General). `hdr`: linear scene color input.
     bool RecordDlss(vk::CommandBuffer cmdbuf, const Dlss::Resource& color,
                     const Dlss::Resource& depth, u32 w, u32 h, u32 ow, u32 oh, float frame_ms,
                     bool hdr);
-    /// Records FSR 4 into output_image; on a permanent failure FSR 3 takes over.
     bool RecordFsr4(vk::CommandBuffer cmdbuf, Fsr4Upscaler::Image color, Fsr4Upscaler::Image depth,
                     u32 w, u32 h, u32 ow, u32 oh, float frame_ms);
+#endif
     void RecordTaa(vk::CommandBuffer cmdbuf, vk::ImageView color, vk::ImageView depth);
     /// Sharpness above 1 for FSR 3/4 (their RCAS stops at 1): one more RCAS pass over the target
     /// (output_image, or the 8-bit UI image with ldr) in General layout after the upscaler.
@@ -266,11 +267,13 @@ private:
     std::unordered_map<VAddr, DisplayImage> displays;
     FfxVkPortableUpscaleContext* context = nullptr;
     bool resources_ready = false; ///< images below match width/height/out size
-    bool resources_fsr4 = false;  ///< made for FSR 4 (no FSR 3 context)
+    bool resources_fsr4 = false;  ///< GOW3-only provider context; always false for Bloodborne
     bool resources_taa = false;
+#ifndef BB_PORT_BUILD
     std::unique_ptr<Fsr4Upscaler> fsr4;
     bool fsr4_failed = false;
     bool dlss_failed = false;
+#endif
     VideoCore::UniqueImage motion_image;
     VideoCore::UniqueImage output_image;
     vk::UniqueImageView motion_view;

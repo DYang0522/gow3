@@ -209,6 +209,7 @@ list(FILTER BB_VIDEO_CORE_SOURCES EXCLUDE REGEX "vk_frame_generation\\.cpp$")
 # is not part of this runtime.
 list(FILTER BB_VIDEO_CORE_SOURCES EXCLUDE REGEX "host_passes/fsr_pass\\.cpp$")
 list(FILTER BB_VIDEO_CORE_SOURCES EXCLUDE REGEX "/fsr411/")
+list(FILTER BB_VIDEO_CORE_SOURCES EXCLUDE REGEX "vk_fsr4\\.cpp$|vk_dlss\\.cpp$")
 file(GLOB_RECURSE BB_PORT_SHIM_SOURCES CONFIGURE_DEPENDS
     "${BB_PORT_DIR}/gpu/shim/*.cpp")
 add_library(bbgpu ${SPARTANGPU_KIND} ${BB_VIDEO_CORE_SOURCES}
@@ -236,7 +237,7 @@ target_compile_options(bbgpu PRIVATE -Wno-deprecated-declarations -Wno-missing-f
 if (NOT WIN32)
     target_link_options(bbgpu PRIVATE -Wl,--allow-shlib-undefined)
 endif()
-target_link_libraries(bbgpu PRIVATE ffx-vulkan::portable ffx-vulkan::fsr4-v07-vulkan
+target_link_libraries(bbgpu PRIVATE ffx-vulkan::portable
     ffx-vulkan::fsr3-vk-framegeneration-3.1.6)
 target_link_libraries(bbgpu PUBLIC Vulkan::Headers fmt::fmt Boost::headers magic_enum::magic_enum
     tsl::robin_map GPUOpen::VulkanMemoryAllocator PkgConfig::XXHASH PkgConfig::SDL3

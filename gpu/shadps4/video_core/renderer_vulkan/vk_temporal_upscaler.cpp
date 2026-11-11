@@ -280,14 +280,17 @@ TemporalUpscaler::~TemporalUpscaler() {
 }
 
 bool TemporalUpscaler::Active() const {
+#ifdef BB_PORT_BUILD
+    const bool selected = enabled && !failed &&
+                          (PortSettings::Get().upscaler == PortSettings::UpscalerFsr3 ||
+                           PortSettings::Get().upscaler == PortSettings::UpscalerTaa);
+    return selected;
+#else
     const bool selected = enabled && !failed &&
                           (PortSettings::Get().upscaler == PortSettings::UpscalerFsr3 ||
                            PortSettings::IsFsr4(PortSettings::Get().upscaler) ||
                            PortSettings::Get().upscaler == PortSettings::UpscalerTaa ||
                            PortSettings::Get().upscaler == PortSettings::UpscalerDlss);
-#ifdef BB_PORT_BUILD
-    return selected;
-#else
     // Toggle 1 << 24 switches it off at run time (A/B); history restarts after.
     return selected && !SpartanToggle::Disabled(1u << 24);
 #endif
@@ -296,7 +299,7 @@ bool TemporalUpscaler::Active() const {
 bool TemporalUpscaler::ReactiveOn() const {
     // FSR 4 takes no reactive mask: the opaque snapshot and the mask pass would be wasted.
 #ifdef BB_PORT_BUILD
-    return PortSettings::Get().reactive && !UseFsr4() && !UseDlss() &&
+    return PortSettings::Get().reactive &&
            PortSettings::Get().upscaler != PortSettings::UpscalerTaa;
 #else
     return PortSettings::Get().reactive && !SpartanToggle::Disabled(1u << 27) && !UseFsr4() && !UseDlss() &&
@@ -371,10 +374,13 @@ bool TemporalUpscaler::OnFrameStart() {
         target_height = PortSettings::OutputHeights[output];
         std::printf("Output resolution: %ux%u (live)\n", target_width, target_height);
         failed = false;
+#ifndef BB_PORT_BUILD
         fsr4_failed = false;
+#endif
     }
     const bool changed = output_changed || applied_preset != preset || active != last_active ||
                          jitter_on != last_jitter || applied_upscaler != upscaler;
+#ifndef BB_PORT_BUILD
 #ifndef BB_PORT_BUILD
     if (applied_upscaler != upscaler) {
         // A failed provider keeps a fatal flag internally; a user retry gets a fresh context.
@@ -383,6 +389,7 @@ bool TemporalUpscaler::OnFrameStart() {
         if (PortSettings::IsFsr4(upscaler)) PortSettings::Get().fsr4_problem = nullptr;
     }
     if (applied_upscaler != upscaler) fsr4_failed = false; // retry after a menu change
+#endif
 #endif
     // Dynamic scene resolution scaling (live preset switching) works on all GPUs.
     // On GPUs without D32S8 blit support, UI depth is cleared instead of copied from scene.
@@ -450,8 +457,12 @@ void TemporalUpscaler::OnDispatch(u64 cs_hash) {
 }
 
 bool TemporalUpscaler::EnsureResources(u32 w, u32 h, u32 ow, u32 oh, bool hdr) {
+#ifdef BB_PORT_BUILD
+    constexpr bool use_fsr4 = false;
+#else
     // DLSS, like FSR 4, has its own context: no portable FSR 3 context is made.
     const bool use_fsr4 = UseFsr4() || UseDlss();
+#endif
     const bool use_taa = PortSettings::Get().upscaler == PortSettings::UpscalerTaa;
     if (use_taa && (w != ow || h != oh)) {
         std::printf("TAA: remove SPARTAN_RENDER_RES to use native-resolution TAA\n");
@@ -1172,6 +1183,7 @@ void TemporalUpscaler::Run() {
     if (PortSettings::Get().upscaler == PortSettings::UpscalerTaa) {
         RecordTaa(cmdbuf, input_color_view, input_depth_view);
         dispatched = true;
+#ifndef BB_PORT_BUILD
     } else if (UseFsr4()) {
         dispatched = RecordFsr4(cmdbuf, {input_color, input_color_view, w, h},
                                 {input_depth, input_depth_view, w, h}, w, h, ow, oh, frame_ms);
@@ -1181,6 +1193,7 @@ void TemporalUpscaler::Run() {
             {input_color, input_color_view, color.info.pixel_format, vk::ImageAspectFlagBits::eColor, w, h},
             {input_depth, input_depth_view, depth_format, vk::ImageAspectFlagBits::eDepth, w, h}, w, h,
             ow, oh, frame_ms, true);
+#endif
     } else {
         FfxVkPortableUpscaleDispatchInfo info{};
         info.structSize = sizeof(info);
@@ -1831,14 +1844,19 @@ void TemporalUpscaler::RunScaled() {
     }
     last_frame = now;
 
-    // spartanport: FSR 4 writes its HDR-format output, copied into the output-size UI image.
+    // Native TAA and the GOW3-only FSR4/DLSS paths use the output-size UI image.
+#ifdef BB_PORT_BUILD
+    if (PortSettings::Get().upscaler == PortSettings::UpscalerTaa) {
+#else
     if (UseFsr4() || UseDlss() || PortSettings::Get().upscaler == PortSettings::UpscalerTaa) {
+#endif
         barrier(vk::Image(output_image), vk::ImageAspectFlagBits::eColor,
                 vk::ImageLayout::eUndefined, all, vk::AccessFlagBits2::eNone,
                 vk::ImageLayout::eGeneral, all, rw);
         bool ok4 = true;
         if (PortSettings::Get().upscaler == PortSettings::UpscalerTaa) {
             RecordTaa(cmdbuf, color_view, depth_view);
+#ifndef BB_PORT_BUILD
         } else if (UseDlss()) {
             ok4 = RecordDlss(cmdbuf,
                              {color_image, color_view, color.info.pixel_format,
@@ -1850,6 +1868,7 @@ void TemporalUpscaler::RunScaled() {
             ok4 = RecordFsr4(cmdbuf, {color_image, color_view, source_width, source_height},
                             {depth_image, depth_view, source_width, source_height}, w, h, ow,
                             oh, frame_ms);
+#endif
         }
         if (ok4) {
             if (PortSettings::Get().upscaler != PortSettings::UpscalerTaa) {
@@ -2149,6 +2168,8 @@ bool TemporalUpscaler::DisplayOverride(VAddr address, Display& display) {
 
 namespace Vulkan {
 
+#ifndef BB_PORT_BUILD
+
 bool TemporalUpscaler::UseFsr4() const {
 #ifdef BB_PORT_BUILD
     // The Bloodborne/R9 290X target exposes only FSR 3.1 and native TAA.
@@ -2267,5 +2288,7 @@ bool TemporalUpscaler::RecordDlss(vk::CommandBuffer cmdbuf, const Dlss::Resource
     }
     return ok;
 }
+
+#endif // !BB_PORT_BUILD
 
 } // namespace Vulkan
