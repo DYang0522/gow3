@@ -462,7 +462,7 @@ u32 FrameGenerator::Generate(vk::CommandBuffer& cmdbuf, vk::Image color, vk::Ima
         .image = output.image,
         .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
     };
-    cmdbuf.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pMemoryBarriers = &to_write});
+    cmdbuf.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &to_write});
     const u32 generated = GenerateFsr3(cmdbuf, with_hudless ? hudless : color,
                                       input_usage, width, height, output, frame_ms);
     if (generated && with_hudless) ComposeUi(cmdbuf, color_view, hudless_view, output, width, height);
@@ -474,7 +474,7 @@ u32 FrameGenerator::Generate(vk::CommandBuffer& cmdbuf, vk::Image color, vk::Ima
         written.dstStageMask = vk::PipelineStageFlagBits2::eAllCommands;
         written.dstAccessMask = vk::AccessFlagBits2::eTransferRead;
         written.oldLayout = vk::ImageLayout::eGeneral;
-        cmdbuf.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pMemoryBarriers = &written});
+        cmdbuf.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &written});
     } else {
         reset = true;
     }
