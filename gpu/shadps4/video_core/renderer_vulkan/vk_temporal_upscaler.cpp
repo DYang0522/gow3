@@ -1218,7 +1218,7 @@ void TemporalUpscaler::Run() {
         info.frameTimeMilliseconds = frame_ms;
         info.preExposure = 1.0f;
         info.cameraNear = camera_motion.Near();
-        info.cameraFar = 3000.0f;
+        info.cameraFar = camera_motion.Far();
         info.cameraVerticalFovRadians = camera_motion.VerticalFov();
         info.viewSpaceToMeters = 1.0f;
         // RCAS strength 0..1 (menu, SPARTAN_FSR_SHARPNESS); jitter at 1:1 softens the image slightly.
@@ -1348,9 +1348,16 @@ void TemporalUpscaler::CaptureFrameGen() {
         camera_motion.RecordMotion(cmdbuf, depth_view, motion, w, h);
         // The camera the upscalers get (far plane 3000 when the projection's is infinite), and
         // its motion as clip-space matrices.
+        const auto scene_camera = camera_motion.GetFrameGenerationCamera();
         FrameGenCamera camera{};
-        camera.near_plane = camera_motion.Near();
-        camera.vertical_fov = camera_motion.VerticalFov();
+        camera.position = scene_camera.position;
+        camera.right = scene_camera.right;
+        camera.up = scene_camera.up;
+        camera.forward = scene_camera.forward;
+        camera.near_plane = scene_camera.near_plane;
+        camera.far_plane = scene_camera.far_plane;
+        camera.vertical_fov = scene_camera.vertical_fov;
+        camera.valid = scene_camera.valid;
         frame_generator->EndCapture(cmdbuf, Active() ? jitter : std::array<float, 2>{},
                                     camera_motion.Ready(), camera);
     }

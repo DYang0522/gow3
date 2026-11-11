@@ -58,9 +58,23 @@ public:
     [[nodiscard]] std::array<u32, 2> RenderSize() const noexcept {
         return render_size;
     }
+    /// The camera data used by FSR frame generation. The pose comes from the inverse view
+    /// matrix (its columns are the world-space camera axes; its last column is position).
+    struct FrameGenerationCamera {
+        std::array<float, 3> position{};
+        std::array<float, 3> right{1.0f, 0.0f, 0.0f};
+        std::array<float, 3> up{0.0f, 1.0f, 0.0f};
+        std::array<float, 3> forward{0.0f, 0.0f, 1.0f};
+        float near_plane = 0.1f;
+        float far_plane = 3000.0f;
+        float vertical_fov = 1.0f;
+        bool valid = false;
+    };
     /// Vertical field of view and near/far planes of the current camera.
     [[nodiscard]] float VerticalFov() const noexcept;
     [[nodiscard]] float Near() const noexcept;
+    [[nodiscard]] float Far() const noexcept;
+    [[nodiscard]] FrameGenerationCamera GetFrameGenerationCamera() const noexcept;
     // Current projection, previous projection, and row Z of previous-view * inverse-view.
     [[nodiscard]] std::array<std::array<float, 4>, 3> TaaDepthParameters() const noexcept;
 
@@ -84,6 +98,7 @@ private:
         std::array<float, 12> view{};     ///< world to view, 3x4 rows
         std::array<float, 12> inv_view{}; ///< view to world, 3x4 rows
         std::array<float, 4> proj{};      ///< x scale, y scale, z scale, z offset
+        float far_plane = 3000.0f;
         bool valid = false;
     };
 

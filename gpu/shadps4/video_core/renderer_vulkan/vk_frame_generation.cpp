@@ -265,13 +265,15 @@ void FrameGenerator::EndCapture(vk::CommandBuffer cmdbuf, std::array<float, 2> j
     cmdbuf.pipelineBarrier2({.imageMemoryBarrierCount = 2, .pImageMemoryBarriers = to_read.data()});
     DumpIfRequested(cmdbuf, depth_image, input_width, input_height, "depth");
     DumpIfRequested(cmdbuf, motion_image, input_width, input_height, "motion");
-    if (!motion_valid) {
-        reset = true; // no camera this frame: the frames are not related
+    if (!motion_valid || !camera.valid || !(camera.near_plane > 0.0f) ||
+        !(camera.far_plane > camera.near_plane) || !(camera.vertical_fov > 0.0f)) {
+        reset = true; // no complete camera pair/pose: do not generate from stale camera data
+        captured = false;
+        return;
     }
     captured = true;
     capture_jitter = jitter;
-    if (camera.near_plane > 0.0f && camera.far_plane > camera.near_plane &&
-        camera.vertical_fov > 0.0f) capture_camera = camera;
+    capture_camera = camera;
     const auto capture_now = std::chrono::steady_clock::now();
     const float dt = std::chrono::duration<float, std::milli>(capture_now - last_capture).count();
     last_capture = capture_now;
@@ -555,10 +557,13 @@ u32 FrameGenerator::GenerateFsr3(vk::CommandBuffer cmdbuf, vk::Image color,
         .cameraFar = capture_camera.far_plane,
         .viewSpaceToMeters = 1.0f,
         .cameraVerticalFovRadians = capture_camera.vertical_fov,
-        .cameraPosition = {0.0f, 0.0f, 0.0f},
-        .cameraUp = {0.0f, 1.0f, 0.0f},
-        .cameraRight = {1.0f, 0.0f, 0.0f},
-        .cameraForward = {0.0f, 0.0f, 1.0f},
+        .cameraPosition = {capture_camera.position[0], capture_camera.position[1],
+                           capture_camera.position[2]},
+        .cameraUp = {capture_camera.up[0], capture_camera.up[1], capture_camera.up[2]},
+        .cameraRight = {capture_camera.right[0], capture_camera.right[1],
+                        capture_camera.right[2]},
+        .cameraForward = {capture_camera.forward[0], capture_camera.forward[1],
+                          capture_camera.forward[2]},
         .frameId = id,
         .reset = reset ? VK_TRUE : VK_FALSE,
     };
