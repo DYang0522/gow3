@@ -557,7 +557,12 @@ static ABI void *posix_mmap(void *address,uint64_t length,int prot,int flags,int
     return mapped;
 }
 static ABI int32_t posix_munmap(void *address,uint64_t length) {
-    int32_t result=direct_unmap(address,length);
+    if (!address || !length || ((uintptr_t)address%PAGE)) {
+        *runtime_errno()=EINVAL; return -1;
+    }
+    uint64_t size=align_up(length,PAGE);
+    if (size<length) { *runtime_errno()=EINVAL; return -1; }
+    int32_t result=direct_unmap(address,size);
     if (result) { *runtime_errno()=posix_memory_errno(result); return -1; }
     return 0;
 }
