@@ -230,22 +230,33 @@ static uint32_t at9_frame(Instance *in, const unsigned char **input, uint64_t *i
     }
     return 0;
 }
-static void parse_riff(Instance *in, const unsigned char **input, uint64_t *size) {
+/* Returns 1 once the data chunk is reached, 0 while a split RIFF header/chunk
+ * is incomplete. Leave the input cursor untouched until then so the next batch can
+ * retry without unsigned-size underflow or reading beyond the supplied buffer. */
+static int parse_riff(Instance *in, const unsigned char **input, uint64_t *size) {
+    if (*size<12) return 0;
     const unsigned char *p=*input, *end=p+*size;
+    if (memcmp(p,"RIFF",4) || memcmp(p+8,"WAVE",4)) return 0;
     p+=12;
-    while (p+8<=end) {
-        uint32_t tag, length; memcpy(&tag,p,4); memcpy(&length,p+4,4); p+=8;
-        if (tag==0x61746164) break;                                   /* "data" */
-        if (tag==0x20746d66 && length>=52 && p+52<=end) {             /* "fmt " */
+    while ((uint64_t)(end-p)>=8) {
+        uint32_t tag, length;
+        memcpy(&tag,p,4); memcpy(&length,p+4,4); p+=8;
+        uint64_t advance=(uint64_t)length+(length&1u);
+        if (advance>(uint64_t)(end-p)) return 0;
+        if (tag==0x61746164) {                                       /* "data" */
+            *size-=(uint64_t)(p-*input); *input=p;
+            return 1;
+        }
+        if (tag==0x20746d66 && length>=52) {                         /* "fmt " */
             memcpy(in->config,p+44,4); at9_reset(in);
-        } else if (tag==0x74636166 && length>=12 && p+12<=end) {      /* "fact" */
+        } else if (tag==0x74636166 && length>=12) {                  /* "fact" */
             uint32_t total, delay; memcpy(&total,p,4); memcpy(&delay,p+4,4);
             in->gapless_init.total_samples=total; in->gapless_init.skip_samples=(uint16_t)delay;
             gapless_reset(in);
         }
-        p+=length;
+        p+=advance;
     }
-    *size-=(uint64_t)(p-*input); *input=p;
+    return 0;
 }
 
 /* ---- job execution ---- */
@@ -325,7 +336,10 @@ static void run_job(Context *ctx, uint32_t id, Job *job) {
     int32_t internal=0;
     if (in_size) for (;;) {
         if (in->gapless_loop && gapless_end(in)) { gapless_reset(in); in->total_samples=0; }
-        if ((in->codec_flags & 1) && in_size>=4 && !memcmp(input,"RIFF",4)) { parse_riff(in,&input,&in_size); in->total_samples=0; }
+        if ((in->codec_flags & 1) && in_size>=4 && !memcmp(input,"RIFF",4)) {
+            if (!parse_riff(in,&input,&in_size)) { flags_result|=RESULT_PARTIAL_INPUT; break; }
+            in->total_samples=0;
+        }
         if (!in->initialized) { flags_result|=RESULT_NOT_INITIALIZED; break; }
         if (!gapless_end(in) && output_room(&out)<next_frame_bytes(in)) flags_result|=RESULT_NOT_ENOUGH_ROOM;
         if (in_size<in->superframe_remain) flags_result|=RESULT_PARTIAL_INPUT;
