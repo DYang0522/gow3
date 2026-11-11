@@ -21,13 +21,30 @@ public:
         const char* v = std::getenv(name);
         return v ? std::strtol(v, nullptr, 10) : fallback;
     }
+    static const char* Variable(const char* spartan, const char* bloodborne) {
+#ifdef BB_PORT_BUILD
+        return std::getenv(bloodborne);
+#else
+        return std::getenv(spartan);
+#endif
+    }
     s32 GetGpuId() { static const auto value = s32(Number("SPARTAN_GPU_ID", -1)); return value; }
     u32 GetInternalScreenWidth() { static const auto value = u32(Number("SPARTAN_INTERNAL_WIDTH", 1920)); return value; }
     u32 GetInternalScreenHeight() { static const auto value = u32(Number("SPARTAN_INTERNAL_HEIGHT", 1080)); return value; }
-    std::string GetPresentMode() { const char* v = std::getenv("SPARTAN_PRESENT_MODE"); return v ? v : "Mailbox"; }
+    std::string GetPresentMode() {
+        const char* v = Variable("SPARTAN_PRESENT_MODE", "BB_PRESENT_MODE");
+        return v ? v : "Mailbox";
+    }
     // spartanport: Relaxed by default: without readbacks FaceGen reads stale GPU-written vertices
     // (vertex explosions); in the test scene it costs no measurable frame rate.
-    u32 GetReadbacksMode() { static const auto value = u32(Number("SPARTAN_READBACKS", GpuReadbacksMode::Relaxed)); return value; }
+    u32 GetReadbacksMode() {
+        static const auto value = u32(std::max<long>(0, std::min<long>(
+            Variable("SPARTAN_READBACKS", "BB_READBACKS")
+                ? std::strtol(Variable("SPARTAN_READBACKS", "BB_READBACKS"), nullptr, 10)
+                : GpuReadbacksMode::Relaxed,
+            GpuReadbacksMode::Precise)));
+        return value;
+    }
     // spartanport: SPARTAN_VBLANK_HZ=0 (uncapped presets): vblank runs at 480 Hz so a finished frame is
     // shown within ~2 ms instead of waiting for the next display-rate vblank (below the display
     // rate frames alternated 10/20 ms at 100 Hz: judder), and GetFrameLimit() caps the rate at
@@ -52,7 +69,13 @@ public:
     bool IsCopyGpuBuffers() { static const auto value = Flag("SPARTAN_COPY_GPU_BUFFERS", false); return value; }
     bool IsDirectMemoryAccessEnabled() { static const auto value = Flag("SPARTAN_DIRECT_MEMORY_ACCESS", false); return value; }
     bool IsDumpShaders() { static const auto value = Flag("SPARTAN_DUMP_SHADERS", false); return value; }
-    bool IsHdrAllowed() { static const auto value = Flag("SPARTAN_HDR", false); return value; }
+    bool IsHdrAllowed() {
+        static const auto value = [] {
+            const char* v = Variable("SPARTAN_HDR", "BB_HDR");
+            return v && (v[0] == '1' || v[0] == 'y' || v[0] == 't');
+        }();
+        return value;
+    }
     bool IsNullGPU() { static const auto value = Flag("SPARTAN_NULL_GPU", false); return value; }
     bool IsPatchShaders() { return false; }
     bool IsPipelineCacheArchived() { return false; }

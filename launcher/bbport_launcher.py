@@ -68,7 +68,6 @@ FPS_MODES = [("Без ограничения (патч)", "uncap"), ("60", "60")
              ("30 (как на PS4)", "30")]
 PRESENT_MODES = [("Mailbox", "Mailbox"), ("FIFO (VSync)", "Fifo"),
                  ("FIFO Relaxed", "FifoRelaxed"), ("Immediate", "Immediate")]
-DRAW_PIPE = [("Авто (8+ потоков)", ""), ("Включён", "1"), ("Выключен (стабильнее)", "0")]
 LANGUAGES = [("Английский", "1"), ("Русский", "8"), ("Японский", "0"), ("Французский", "2"),
              ("Испанский", "3"), ("Немецкий", "4"), ("Итальянский", "5")]
 LIVE_RESOLUTION = [("Авто (по видеокарте)", "auto"), ("Выключена (быстрее)", "0"), ("Включена", "1")]
@@ -90,9 +89,7 @@ DEFAULTS = {
     "present_mode": "Mailbox",
     "fps_mode": "uncap",
     "fps_limit": 0,
-    "draw_pipe": "",
     "readbacks": "",
-    "vrr": False,
     "save_backups": False,
     "mangohud": False,
     "frame_stats": False,
@@ -212,12 +209,8 @@ def game_environment(s):
     env["BB_FPS"] = s["fps_mode"]
     if s["fps_limit"] > 0:
         env["BB_FPS_LIMIT"] = str(s["fps_limit"])
-    if s["draw_pipe"]:
-        env["BB_DRAW_PIPE"] = s["draw_pipe"]
     if s["readbacks"]:
         env["BB_READBACKS"] = s["readbacks"]
-    if s["vrr"]:
-        env["BB_VRR"] = "1"
     env["BB_SAVE_BACKUPS"] = "1" if s["save_backups"] else "0"
     if s["mangohud"]:
         env["MANGOHUD"] = "1"
@@ -439,9 +432,6 @@ class LauncherWindow(Adw.ApplicationWindow):
         screen.add(self.present_row)
         self.hdr_row = Adw.SwitchRow(title=tr("Разрешить HDR"), active=self.settings["hdr"])
         screen.add(self.hdr_row)
-        self.vrr_row = Adw.SwitchRow(title="FreeSync / G-Sync (VRR)", subtitle=tr(
-            "V-Sync и ограничение кадров чуть ниже частоты экрана"), active=self.settings["vrr"])
-        screen.add(self.vrr_row)
         self.hud_row = combo_row(tr("Положение HUD на ультрашироком экране"), None, HUD_POSITIONS,
                                  self.ini.get("hud_position", "100"))
         screen.add(self.hud_row)
@@ -510,11 +500,6 @@ class LauncherWindow(Adw.ApplicationWindow):
         page.add(frames)
 
         perf = Adw.PreferencesGroup(title=tr("Производительность"))
-        self.pipe_row = combo_row(
-            tr("Двухстадийный конвейер GPU"),
-            tr("Быстрее на 20–30%; при нестабильности выключите"), DRAW_PIPE,
-            self.settings["draw_pipe"])
-        perf.add(self.pipe_row)
         self.readbacks_row = combo_row(tr("Чтение данных GPU процессором"), None, READBACKS,
                                        self.settings["readbacks"])
         perf.add(self.readbacks_row)
@@ -641,9 +626,7 @@ class LauncherWindow(Adw.ApplicationWindow):
         s["hdr"] = self.hdr_row.get_active()
         s["fps_mode"] = combo_value(self.fps_row)
         s["fps_limit"] = int(self.limit_row.get_value())
-        s["draw_pipe"] = combo_value(self.pipe_row)
         s["readbacks"] = combo_value(self.readbacks_row)
-        s["vrr"] = self.vrr_row.get_active()
         s["save_backups"] = self.backups_row.get_active()
         s["mangohud"] = self.mangohud_row.get_active()
         s["frame_stats"] = self.stats_row.get_active()

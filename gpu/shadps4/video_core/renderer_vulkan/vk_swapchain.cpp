@@ -313,14 +313,35 @@ void Swapchain::FindPresentMode() {
         return;
     }
 
-    // spartanport: VSync on is Fifo (no tearing, waits for the display); off is Mailbox when the
-    // driver has it, else Immediate (tearing allowed), else Fifo.
-    vsync = PortSettings::Get().vsync;
     const auto has = [&](vk::PresentModeKHR mode) { return std::ranges::find(modes, mode) != modes.cend(); };
+#ifdef BB_PORT_BUILD
+    const std::string requested = EmulatorSettings.GetPresentMode();
+    const std::pair<const char*, vk::PresentModeKHR> choices[] = {
+        {"Mailbox", vk::PresentModeKHR::eMailbox},
+        {"Fifo", vk::PresentModeKHR::eFifo},
+        {"FifoRelaxed", vk::PresentModeKHR::eFifoRelaxed},
+        {"Immediate", vk::PresentModeKHR::eImmediate},
+    };
+    const auto choice = std::ranges::find_if(choices, [&](const auto& item) {
+        return requested == item.first;
+    });
+    const auto selected = choice == std::end(choices) ? vk::PresentModeKHR::eMailbox : choice->second;
+    if (has(selected)) {
+        present_mode = selected;
+    } else {
+        LOG_WARNING(Render, "Requested present mode {} is unavailable; falling back to Fifo", requested);
+        present_mode = has(vk::PresentModeKHR::eFifo) ? vk::PresentModeKHR::eFifo
+                                                      : vk::PresentModeKHR::eImmediate;
+    }
+    vsync = present_mode != vk::PresentModeKHR::eImmediate;
+#else
+    // VSync on is Fifo; off is Mailbox when available, else Immediate, else Fifo.
+    vsync = PortSettings::Get().vsync;
     present_mode = vsync ? vk::PresentModeKHR::eFifo
                    : has(vk::PresentModeKHR::eMailbox) ? vk::PresentModeKHR::eMailbox
                    : has(vk::PresentModeKHR::eImmediate) ? vk::PresentModeKHR::eImmediate
                                                          : vk::PresentModeKHR::eFifo;
+#endif
     std::printf("Swapchain: VSync %s (%s)\n", vsync ? "on" : "off", vk::to_string(present_mode).c_str());
     mode_shows_on_refresh = present_mode != vk::PresentModeKHR::eImmediate;
     fifo_active = present_mode == vk::PresentModeKHR::eFifo;

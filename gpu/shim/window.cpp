@@ -165,10 +165,13 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}
 void WindowSDL::ApplyDisplayMode(int mode) {
 #ifdef BB_PORT_BUILD
     display_mode = mode;
-    SDL_SetWindowFullscreen(window, false);
+    const char* fullscreen = std::getenv("BB_FULLSCREEN");
+    SDL_SetWindowFullscreen(window, fullscreen && fullscreen[0] == '1');
     SDL_SyncWindow(window);
     const SDL_DisplayMode* current = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window));
-    if (current) std::printf("Window: %dx%d at %.2f Hz\n", current->w, current->h, double(current->refresh_rate));
+    if (current) std::printf("Window: %s, %dx%d at %.2f Hz\n",
+                             fullscreen && fullscreen[0] == '1' ? "fullscreen" : "windowed",
+                             current->w, current->h, double(current->refresh_rate));
 #else
     display_mode = mode;
     if (mode == SpartanGraphics::Windowed) {
