@@ -63,6 +63,15 @@ typedef struct { const char *name; void *function; } RuntimeExport;
 #define RUNTIME_LOOKUP(table, nid) runtime_lookup(table, sizeof(table)/sizeof(*(table)), nid)
 const char *runtime_symbol(const char *nid);
 uintptr_t runtime_lookup(const RuntimeExport *table, size_t count, const char *nid);
+typedef struct { uint64_t address, size, flags; } RuntimeImageSegment;
+typedef struct {
+    uint64_t base, size, init, tls_address, tls_memsz, tls_filesz, tls_module, tls_align;
+    const char *name;
+} RuntimeImageModule;
+void runtime_kernel_set_module_map(void *image, uint64_t image_size, uint64_t entry,
+                                   const RuntimeImageSegment *segments, size_t segment_count,
+                                   const RuntimeImageModule *modules, size_t module_count,
+                                   const uint64_t main_tls[4]);
 uintptr_t runtime_kernel_resolve(const char *name);
 uintptr_t runtime_file_resolve(const char *name);
 uintptr_t runtime_services_resolve(const char *name);
