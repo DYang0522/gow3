@@ -422,39 +422,23 @@ void Menu() {
     ImGui::Text("%s", FpsText().c_str());
 
     ImGui::SeparatorText("Temporal upscaling");
-    static const char* upscalers[] = {"Off", "FSR 3.1", "FSR 4 (INT8)",
-        "TAA (native anti-aliasing)", "DLSS (NVIDIA RTX)"};
-    int upscaler = s.upscaler;
-    if (ImGui::BeginCombo("Upscaler", upscalers[upscaler])) {
-        for (int i = 0; i < BbSettings::UpscalerCount; ++i) {
-            const bool supported = i == BbSettings::UpscalerFsr4 ? s.fsr4_supported.load()
-                : i == BbSettings::UpscalerDlss ? s.dlss_supported.load() : true;
-            ImGui::BeginDisabled(!supported);
-            if (ImGui::Selectable(upscalers[i], i == upscaler)) Store(s.upscaler, i, true);
-            ImGui::EndDisabled();
-            if (!supported) {
-                ImGui::SameLine();
-                ImGui::TextDisabled("- unsupported by this GPU");
+    static constexpr int upscaler_values[] = {
+        BbSettings::UpscalerOff, BbSettings::UpscalerFsr3, BbSettings::UpscalerTaa
+    };
+    static const char* upscalers[] = {
+        "Off", "FSR 3.1", "TAA (native anti-aliasing)"
+    };
+    const int selected_index = s.upscaler == BbSettings::UpscalerTaa ? 2
+                             : s.upscaler == BbSettings::UpscalerFsr3 ? 1 : 0;
+    if (ImGui::BeginCombo("Upscaler", upscalers[selected_index])) {
+        for (int i = 0; i < 3; ++i) {
+            if (ImGui::Selectable(upscalers[i], i == selected_index)) {
+                Store(s.upscaler, upscaler_values[i], true);
             }
         }
         ImGui::EndCombo();
     }
-    if (const char* problem = s.dlss_problem.load(); problem && upscaler == BbSettings::UpscalerDlss) {
-        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "DLSS: %s", problem);
-    }
-    if (const char* problem = s.fsr4_problem.load()) {
-        ImGui::PushTextWrapPos();
-        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "FSR 4 unavailable: %s", problem);
-        if (!BbSettings::IsFsr4(s.upscaler))
-            ImGui::TextUnformatted("The selected mode is active. You can select FSR 4 again.");
-        ImGui::PopTextWrapPos();
-    }
-    if (s.upscaler == BbSettings::UpscalerFsr4) {
-        Hint("FSR 4 INT8 uses the v07 model from the AMD FidelityFX SDK. It requires GPU shader INT8 support and is unavailable on older GPUs. Assets: tools/fetch_fsr4_assets.sh.");
-        Checkbox("FSR 4: auto exposure", s.fsr4_auto_exposure);
-        Checkbox("FSR 4: invert jitter", s.fsr4_invert_jitter);
-        Hint("Ghosting diagnostics: FSR 4 uses exposure to normalize color and decide when to discard history. These options apply immediately.");
-    }
+    const int upscaler = upscaler_values[selected_index];
     const bool upscaler_on = s.upscaler != BbSettings::UpscalerOff;
     const bool taa = s.upscaler == BbSettings::UpscalerTaa;
     ImGui::BeginDisabled(!upscaler_on);
@@ -528,14 +512,14 @@ void Menu() {
     Hint("Accurate vectors for animated objects reduce breakup on clothing and weapons during movement. Static geometry receives no extra pass. Changes require a restart.");
 #ifdef _WIN32
     const bool cache_available = !motion_unavailable && s.object_motion &&
-        (s.upscaler == BbSettings::UpscalerFsr3 || BbSettings::IsFsr4(s.upscaler));
+        s.upscaler == BbSettings::UpscalerFsr3;
     ImGui::BeginDisabled(!cache_available);
     Checkbox("Object motion vector cache", s.object_motion_cache);
     ImGui::EndDisabled();
     Hint("Caches object motion vectors between frames. Uses additional VRAM and applies after restarting the game.");
     if (cache_available && BbSettings::FsrSettingsNeedRestart()) {
         const bool active = s.startup_object_motion_cache && s.startup_object_motion &&
-            (s.startup_upscaler == BbSettings::UpscalerFsr3 || BbSettings::IsFsr4(s.startup_upscaler));
+            s.startup_upscaler == BbSettings::UpscalerFsr3;
         ImGui::TextDisabled("Startup cache mode: %s; changes apply after restart", active ? "On" : "Off");
     }
 #endif
@@ -732,9 +716,7 @@ void TextEntryBox() {
 const char* UpscalerLabel(int upscaler) {
     switch (upscaler) {
     case BbSettings::UpscalerFsr3: return "FSR 3.1";
-    case BbSettings::UpscalerFsr4: return "FSR 4";
     case BbSettings::UpscalerTaa: return "TAA";
-    case BbSettings::UpscalerDlss: return "DLSS";
     default: return "";
     }
 }
@@ -744,10 +726,7 @@ const char* UpscalerLabel(int upscaler) {
 // bbport_settings.h and a case here.
 ImVec4 UpscalerColor(int upscaler) {
     switch (upscaler) {
-    case BbSettings::UpscalerDlss:
-        return ImVec4(0.55f, 0.90f, 0.30f, 1.0f); // NVIDIA green
     case BbSettings::UpscalerFsr3:
-    case BbSettings::UpscalerFsr4:
         return ImVec4(0.95f, 0.40f, 0.35f, 1.0f); // AMD red
     default:
         return ImVec4(0.75f, 0.75f, 0.75f, 1.0f); // TAA, off: no vendor

@@ -184,6 +184,13 @@ void Load() {
             Set(v, key, value);
         }
     }
+    // This Bloodborne target is the R9 290X Vulkan port: only FSR 3.1 and TAA are exposed.
+    // Migrate old bbport.ini / environment choices rather than leaving an unsupported provider
+    // selected and relying on the renderer to discover it later.
+    if (v.upscaler == UpscalerFsr4 || v.upscaler == UpscalerDlss) {
+        std::printf("Settings: unsupported FSR4/DLSS choice changed to FSR 3.1 on this build\\n");
+        v.upscaler = UpscalerFsr3;
+    }
     // Direct engine launches retain the object-motion cache override.
     const char* shared = std::getenv("BB_SHARED_GRAPHICS_CONFIG");
     if (!shared || std::strcmp(shared, "1") != 0) {

@@ -186,25 +186,19 @@ TemporalUpscaler::TemporalUpscaler(const Instance& instance_, Scheduler& schedul
                                    CameraMotion& camera_motion_, SceneTargets& scene_targets_)
     : instance{instance_}, scheduler{scheduler_}, texture_cache{texture_cache_},
       runtime{runtime_}, camera_motion{camera_motion_}, scene_targets{scene_targets_} {
-    // Reject unsupported shaders before allocating resources or recording a frame.
-#ifdef BB_PORT_BUILD
-    PortSettings::ConfigureUpscalerSupport(instance.IsFsr4Int8Supported());
-#else
+#ifndef BB_PORT_BUILD
+    // The GOW3/SpartanPort build retains its independent FSR4 and DLSS providers.
     PortSettings::ConfigureUpscalerSupport(instance.IsFsr4Int8Supported(),
                                            instance.IsFsr411Supported());
-#endif
     fsr4 = std::make_unique<Fsr4Upscaler>(instance, scheduler);
     {
         const Dlss* dlss = Dlss::Get();
         static std::string problem;
-#ifdef BB_PORT_BUILD
-        problem = !dlss ? "DLSS bridge and nvngx_dlss.dll are not installed" : dlss->Problem();
-#else
         problem = !dlss ? "spartanport_dlss.dll and nvngx_dlss.dll are not installed"
                         : dlss->Problem();
-#endif
         PortSettings::ConfigureDlssSupport(dlss && dlss->Available(), problem.c_str());
     }
+#endif
 #ifdef BB_PORT_BUILD
     // Bloodborne uses its own shader hooks and startup-patched render/output dimensions.
     const char* env = std::getenv("BB_UPSCALER");
@@ -381,6 +375,7 @@ bool TemporalUpscaler::OnFrameStart() {
     }
     const bool changed = output_changed || applied_preset != preset || active != last_active ||
                          jitter_on != last_jitter || applied_upscaler != upscaler;
+#ifndef BB_PORT_BUILD
     if (applied_upscaler != upscaler) {
         // A failed provider keeps a fatal flag internally; a user retry gets a fresh context.
         scheduler.Finish();
@@ -388,6 +383,7 @@ bool TemporalUpscaler::OnFrameStart() {
         if (PortSettings::IsFsr4(upscaler)) PortSettings::Get().fsr4_problem = nullptr;
     }
     if (applied_upscaler != upscaler) fsr4_failed = false; // retry after a menu change
+#endif
     // Dynamic scene resolution scaling (live preset switching) works on all GPUs.
     // On GPUs without D32S8 blit support, UI depth is cleared instead of copied from scene.
     if (!scaled_session) {
@@ -2154,15 +2150,16 @@ bool TemporalUpscaler::DisplayOverride(VAddr address, Display& display) {
 namespace Vulkan {
 
 bool TemporalUpscaler::UseFsr4() const {
-    const int selected = PortSettings::Get().upscaler;
 #ifdef BB_PORT_BUILD
-    const bool supported = instance.IsFsr4Int8Supported();
+    // The Bloodborne/R9 290X target exposes only FSR 3.1 and native TAA.
+    return false;
 #else
+    const int selected = PortSettings::Get().upscaler;
     const bool supported = selected == PortSettings::UpscalerFsr411
                                ? instance.IsFsr411Supported()
                                : instance.IsFsr4Int8Supported();
-#endif
     return PortSettings::IsFsr4(selected) && supported && !fsr4_failed;
+#endif
 }
 
 bool TemporalUpscaler::RecordFsr4(vk::CommandBuffer cmdbuf, Fsr4Upscaler::Image color,
@@ -2218,9 +2215,13 @@ bool TemporalUpscaler::RecordFsr4(vk::CommandBuffer cmdbuf, Fsr4Upscaler::Image 
 }
 
 bool TemporalUpscaler::UseDlss() const {
+#ifdef BB_PORT_BUILD
+    return false;
+#else
     const Dlss* dlss = Dlss::Get();
     return PortSettings::Get().upscaler == PortSettings::UpscalerDlss && dlss && dlss->Available() &&
            !dlss_failed;
+#endif
 }
 
 bool TemporalUpscaler::RecordDlss(vk::CommandBuffer cmdbuf, const Dlss::Resource& color,
