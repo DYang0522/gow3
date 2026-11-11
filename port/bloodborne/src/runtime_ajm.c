@@ -241,12 +241,13 @@ static int parse_riff(Instance *in, const unsigned char **input, uint64_t *size)
     while ((uint64_t)(end-p)>=8) {
         uint32_t tag, length;
         memcpy(&tag,p,4); memcpy(&length,p+4,4); p+=8;
-        uint64_t advance=(uint64_t)length+(length&1u);
-        if (advance>(uint64_t)(end-p)) return 0;
         if (tag==0x61746164) {                                       /* "data" */
+            /* Audio data is intentionally allowed to span multiple AJM input batches. */
             *size-=(uint64_t)(p-*input); *input=p;
             return 1;
         }
+        uint64_t advance=(uint64_t)length+(length&1u);
+        if (advance>(uint64_t)(end-p)) return 0;
         if (tag==0x20746d66 && length>=52) {                         /* "fmt " */
             memcpy(in->config,p+44,4); at9_reset(in);
         } else if (tag==0x74636166 && length>=12) {                  /* "fact" */
