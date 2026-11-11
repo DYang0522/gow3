@@ -408,13 +408,24 @@ static size_t vma_index(uintptr_t a) { /* first VMA with end > a */
     while (lo<hi) { size_t mid=(lo+hi)/2; if (vmas[mid].end<=a) lo=mid+1; else hi=mid; }
     return lo;
 }
-static int vma_insert(size_t at, Vma v) {
-    if (vma_count==vma_capacity) {
-        size_t capacity=vma_capacity ? vma_capacity*2 : 256;
-        Vma *next=realloc(vmas,capacity*sizeof(*vmas));
-        if (!next) return -1;
-        vmas=next; vma_capacity=capacity;
+static int vma_reserve(size_t additional) {
+    if (additional>SIZE_MAX-vma_count) return -1;
+    const size_t required=vma_count+additional;
+    if (required<=vma_capacity) return 0;
+    size_t capacity=vma_capacity ? vma_capacity : 256;
+    while (capacity<required) {
+        if (capacity>SIZE_MAX/2) { capacity=required; break; }
+        capacity*=2;
     }
+    if (capacity>SIZE_MAX/sizeof(*vmas)) return -1;
+    Vma *next=realloc(vmas,capacity*sizeof(*vmas));
+    if (!next) return -1;
+    vmas=next;
+    vma_capacity=capacity;
+    return 0;
+}
+static int vma_insert(size_t at, Vma v) {
+    if (vma_reserve(1)) return -1;
     memmove(vmas+at+1,vmas+at,(vma_count-at)*sizeof(*vmas));
     vmas[at]=v; ++vma_count; return 0;
 }
@@ -458,7 +469,10 @@ static uintptr_t find_free(uintptr_t hint, uint64_t size, uint64_t alignment) {
     return 0;
 }
 static void drop_range(uintptr_t start, uintptr_t end) {
-    int error; size_t i=carve(start,end,&error), n=0;
+    int error;
+    size_t i=carve(start,end,&error), n=0;
+    /* Mutating callers reserve space for both edge splits before changing host mappings. */
+    if (error) { fputs("ERROR: VMA split failed after capacity reservation\n",stderr); abort(); }
     while (i+n<vma_count && vmas[i+n].end<=end && vmas[i+n].start>=start) {
         if (vmas[i+n].kind==KIND_FLEXIBLE) {
             flexible_bytes-=vmas[i+n].end-vmas[i+n].start;
@@ -479,10 +493,16 @@ static int32_t place(void **inout, uint64_t size, int prot, int flags, uint64_t 
         address=find_free(address,size,alignment);
         if (!address) return NO_MEMORY;
     }
+    if (size>USER_MAX-address || address<USER_MIN || address>USER_MAX) return INVALID;
+    /* Replacing a VMA can split its old left/right edges, then insert the new range. */
+    if (vma_reserve(3)) return NO_MEMORY;
     if (host_map(address,size,host_prot(prot),kind==KIND_RESERVED,phys)) return NO_MEMORY;
     void *mapped=(void *)address;
     drop_range(address,address+size);
-    if (vma_insert(vma_index(address),(Vma){address,address+size,kind,prot,type,phys})) return NO_MEMORY;
+    if (vma_insert(vma_index(address),(Vma){address,address+size,kind,prot,type,phys})) {
+        fputs("ERROR: reserved VMA insertion unexpectedly failed\n",stderr);
+        abort();
+    }
     if (kind==KIND_FLEXIBLE) flexible_bytes+=size;
     if (kind!=KIND_RESERVED) queue_hook(HOOK_MAP,address,size);
     *inout=mapped;
@@ -645,8 +665,11 @@ static ABI int32_t direct_map_named(void **out, uint64_t size, int prot, int fla
     (void)name; return direct_map(out,size,prot,flags,physical,alignment);
 }
 static int32_t unmap_locked(uintptr_t start, uint64_t size) {
-    if (start%PAGE || !size) return INVALID;
-    uint64_t end=start+align_up(size,PAGE);
+    if (start%PAGE || !size || start<USER_MIN || start>=USER_MAX) return INVALID;
+    uint64_t rounded=align_up(size,PAGE);
+    if (rounded<size || rounded>USER_MAX-start) return INVALID;
+    uint64_t end=start+rounded;
+    if (vma_reserve(2)) return NO_MEMORY;
     for (size_t i=vma_index(start); i<vma_count && vmas[i].start<end; ++i)
         if (vmas[i].kind!=KIND_RESERVED) {
             uintptr_t a=vmas[i].start>start ? vmas[i].start : start, b=vmas[i].end<end ? vmas[i].end : end;
@@ -743,12 +766,15 @@ static ABI int32_t reserve_range(void **inout, uint64_t size, int flags, uint64_
     return result;
 }
 static int32_t protect_locked(uintptr_t start, uint64_t size, int prot, int type) {
-    uintptr_t end=start+align_up(size,PAGE);
+    if (!size || start<USER_MIN || start>=USER_MAX || size>USER_MAX-start) return INVALID;
+    uintptr_t raw_end=start+(uintptr_t)size;
+    uintptr_t end=align_up(raw_end,PAGE);
     start&=~(uintptr_t)(PAGE-1);
-    if ((prot & ~0x37) || !covered(start,end,0)) return INVALID;
+    if (end<raw_end || end>USER_MAX || (prot & ~0x37) || !covered(start,end,0)) return INVALID;
+    if (vma_reserve(2)) return NO_MEMORY;
     if (host_protect(start,end-start,host_prot(prot))) return INVALID;
     int error; size_t i=carve(start,end,&error);
-    if (error) return NO_MEMORY;
+    if (error) { fputs("ERROR: VMA protection split failed after reservation\n",stderr); abort(); }
     for (; i<vma_count && vmas[i].start<end; ++i) { vmas[i].prot=prot; if (type>=0) vmas[i].type=type; }
     queue_hook(HOOK_INVALIDATE,start,end-start);
     ++protects;
