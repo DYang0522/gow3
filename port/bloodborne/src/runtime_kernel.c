@@ -328,6 +328,12 @@ static ABI int32_t posix_key_create(uint32_t *k,KeyDestructor d) { int32_t r=key
 static ABI int32_t posix_key_delete(uint32_t k) { int32_t r=key_delete(k); return r ? r&0xffff : 0; }
 static ABI int32_t posix_key_set(uint32_t k,void *v) { int32_t r=key_set(k,v); return r ? r&0xffff : 0; }
 
+/* Libkernel lifecycle/signal helpers not needed by this native-thread runtime. */
+static ABI void pthread_cxa_finalize(void *dso) { (void)dso; }
+static ABI int32_t is_signal_return(const void *address) { (void)address; return 0; }
+static ABI int32_t guest_sigreturn(void *context) { (void)context; return ERR(38); }
+static ABI int32_t guest_setcontext(void *context) { (void)context; return ERR(38); }
+
 /* FreeBSD dl_phdr_info prefix used by __elf_phdr_match_addr. */
 typedef struct {
     Elf64_Addr dlpi_addr;
@@ -371,6 +377,9 @@ static const RuntimeExport exports[]={
     {"sceKernelDebugRaiseExceptionOnReleaseMode",raise_exception},
     {"sceKernelGetModuleInfoFromAddr",module_info_from_addr},
     {"__elf_phdr_match_addr",elf_phdr_match_addr},
+    {"__pthread_cxa_finalize",pthread_cxa_finalize},
+    {"_is_signal_return",is_signal_return}, {"sigreturn",guest_sigreturn},
+    {"__Ux86_64_setcontext",guest_setcontext},
     {"sceKernelPrintBacktraceWithModuleInfo",print_backtrace},
     {"signal",guest_signal}, {"sigprocmask",guest_sigprocmask}, {"_sigprocmask",guest_sigprocmask},
     {"sigfillset",guest_sigfillset}, {"sigemptyset",guest_sigemptyset},
