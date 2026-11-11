@@ -39,6 +39,7 @@ typedef struct ThreadAttr {
 typedef struct GuestThread {
     /* Guest-visible TCB is allocated separately; this is the ScePthread handle. */
     uint64_t *tcb;
+    uint64_t dtv[3]; /* Each guest thread owns its dynamic-thread-vector header. */
     unsigned char *tls_block;
     pthread_t host;
     GuestEntry entry;
@@ -97,9 +98,9 @@ static void attach(GuestThread *t) {
     memset(block,0,total);
     if (tls_filesz) memcpy(block,tls_template,tls_filesz);
     uint64_t *tcb=(uint64_t *)(block+offset);
-    static uint64_t dtv[3];
+    memset(t->dtv,0,sizeof(t->dtv));
     tcb[0]=(uint64_t)(uintptr_t)tcb;         /* tcb_self */
-    tcb[1]=(uint64_t)(uintptr_t)dtv;         /* tcb_dtv (static module only) */
+    tcb[1]=(uint64_t)(uintptr_t)t->dtv;      /* tcb_dtv (per guest thread) */
     tcb[2]=(uint64_t)(uintptr_t)t;           /* tcb_thread */
     t->tls_block=block; t->tcb=tcb;
     set_gs(tcb);
