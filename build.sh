@@ -103,6 +103,7 @@ bb_gpu=(-Lout/gpu -lbbgpu -Wl,-rpath,'$ORIGIN/gpu' -Wl,-rpath,"$PWD/out/gpu" -rd
 echo "Built $PWD/out/bb-probe"
 # GPU check for run.sh (live_resolution=auto): links only the Vulkan loader.
 "$CC" -std=c11 -O2 -Wall -Wextra -Werror -Igpu/shadps4 tools/gpu_capabilities.c "${libraries[@]}" -o out/spartanport-gpu-capabilities
+cp out/spartanport-gpu-capabilities out/bb-gpu-capabilities
 if [[ ${1:-} == --test ]]; then
     # The runtime creates its app-specific directory under XDG_DATA_HOME; give tests
     # an isolated parent so a clean CI runner without ~/.local/share still works.

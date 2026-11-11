@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Bloodborne
+Comment=Native Bloodborne Linux port
+Exec=bbport
+Icon=applications-games
+Categories=Game;
+Terminal=false
+StartupWMClass=bbport
