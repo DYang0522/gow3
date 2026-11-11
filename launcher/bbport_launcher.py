@@ -73,10 +73,6 @@ LANGUAGES = [("Английский", "1"), ("Русский", "8"), ("Япон�
              ("Испанский", "3"), ("Немецкий", "4"), ("Итальянский", "5")]
 LIVE_RESOLUTION = [("Авто (по видеокарте)", "auto"), ("Выключена (быстрее)", "0"), ("Включена", "1")]
 READBACKS = [("Relaxed (по умолчанию)", ""), ("Выключены", "0"), ("Precise", "2")]
-# BB_LOW_LATENCY (vk_low_latency.cpp): Auto is NVIDIA Reflex + Boost on NVIDIA and off elsewhere; On is AMD Anti-Lag 2
-# where the driver has it.
-LOW_LATENCY = [("Авто (NVIDIA: включена + Boost)", "auto"), ("Выключена", "off"), ("Включена", "on"),
-               ("Включена + Boost", "boost")]
 # bbport.ini hud_position on ultrawide outputs (scripts/hud_layout.py).
 HUD_POSITIONS = [("У краёв экрана", "100"), ("75%", "75"), ("Посередине", "50"), ("25%", "25"),
                  ("По центру (16:9)", "0")]
@@ -96,7 +92,6 @@ DEFAULTS = {
     "fps_limit": 0,
     "draw_pipe": "",
     "readbacks": "",
-    "low_latency": "auto",
     "vrr": False,
     "save_backups": False,
     "mangohud": False,
@@ -221,7 +216,6 @@ def game_environment(s):
         env["BB_DRAW_PIPE"] = s["draw_pipe"]
     if s["readbacks"]:
         env["BB_READBACKS"] = s["readbacks"]
-    env["BB_LOW_LATENCY"] = s["low_latency"]
     if s["vrr"]:
         env["BB_VRR"] = "1"
     env["BB_SAVE_BACKUPS"] = "1" if s["save_backups"] else "0"
@@ -524,8 +518,6 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.readbacks_row = combo_row(tr("Чтение данных GPU процессором"), None, READBACKS,
                                        self.settings["readbacks"])
         perf.add(self.readbacks_row)
-        self.latency_row = combo_row(tr("Низкая задержка"), None, LOW_LATENCY, self.settings["low_latency"])
-        perf.add(self.latency_row)
         page.add(perf)
 
         saves = Adw.PreferencesGroup(title=tr("Сохранения"))
@@ -651,7 +643,6 @@ class LauncherWindow(Adw.ApplicationWindow):
         s["fps_limit"] = int(self.limit_row.get_value())
         s["draw_pipe"] = combo_value(self.pipe_row)
         s["readbacks"] = combo_value(self.readbacks_row)
-        s["low_latency"] = combo_value(self.latency_row)
         s["vrr"] = self.vrr_row.get_active()
         s["save_backups"] = self.backups_row.get_active()
         s["mangohud"] = self.mangohud_row.get_active()

@@ -29,7 +29,6 @@ struct Readout {
 constexpr Readout Readouts[] = {
     {"show_fps", &Values::show_fps},
     {"show_frame_times", &Values::show_frame_times},
-    {"show_latency", &Values::show_latency},
     {"show_vram", &Values::show_vram},
     {"show_gpu", &Values::show_gpu},
     {"show_cpu", &Values::show_cpu},

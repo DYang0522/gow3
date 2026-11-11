@@ -94,10 +94,9 @@ struct Values {
     std::atomic<float> reactive_max{0.9f};
     std::atomic<int> debug_view{DebugNone};
     /// The FPS overlay's readouts, one toggle each (bbport.ini: show_fps, show_frame_times,
-    /// show_latency, show_vram, show_gpu, show_cpu, show_ram, show_fps_graph).
+    /// show_vram, show_gpu, show_cpu, show_ram, show_fps_graph).
     std::atomic<bool> show_fps{false};
     std::atomic<bool> show_frame_times{false};
-    std::atomic<bool> show_latency{false}; ///< render latency (vk_low_latency.cpp), not frame time
     /// The counter's values green / amber / red by how they stand (bbport.ini counter_colors=1),
     /// or all in plain grey (0).
     std::atomic<bool> counter_colors{true};
@@ -138,11 +137,6 @@ struct Values {
     std::atomic<int> frame_gen_now{0};
     /// The game's own presentation rate, before generated frames.
     std::atomic<float> game_fps{0.0f};
-    /// The time from the game starting a frame to its present, smoothed (vk_low_latency.cpp),
-    /// and the low latency mode: 0 off, 1 Reflex, 2 Reflex + Boost, 3 Anti-Lag 2,
-    /// 4 pacing only.
-    std::atomic<float> latency_ms{0.0f};
-    std::atomic<int> latency_mode{0};
     /// Why this GPU runs without object motion vectors whatever the setting says (vk_object_motion.cpp:
     /// RX 6000 and older, under 6 GB of VRAM), nullptr when the setting decides.
     std::atomic<const char*> object_motion_unavailable{nullptr};
