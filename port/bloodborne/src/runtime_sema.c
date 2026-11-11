@@ -70,12 +70,19 @@ static ABI int32_t sem_create(uint32_t *out,const char *name,uint32_t attr,
     pthread_mutex_unlock(&lock);
     return 0;
 }
-/* Grant tokens only to the head of the FIFO. Also called after enqueueing: a new
- * waiter must not bypass an older waiter, even when tokens are already available. */
+/* Visit waiters in queue order, granting every request the current token count can
+ * satisfy. A large request must not prevent a later smaller request from progressing. */
 static void grant_waiters(Sema *s) {
-    while (s->first && s->first->need<=s->count) {
-        Waiter *w=s->first;
-        s->count-=w->need; s->first=w->next; w->done=1;
+    Waiter **link=&s->first;
+    while (*link) {
+        Waiter *w=*link;
+        if (w->need>s->count) {
+            link=&w->next;
+            continue;
+        }
+        s->count-=w->need;
+        *link=w->next;
+        w->done=1;
         host_check(pthread_cond_signal(&w->event));
     }
 }
@@ -85,7 +92,7 @@ static int32_t wait_count(uint32_t id,int32_t need,uint32_t *timeout,int block) 
     int32_t result=0;
     if (!s) result=ERR(3);
     else if (need<=0 || need>s->maximum) result=ERR(22);
-    else if (s->count>=need && !s->first) { s->count-=need; ++acquired; }
+    else if (s->count>=need) { s->count-=need; ++acquired; }
     else if (!block) result=ERR(16);
     else if (timeout && !*timeout) { result=ERR(60); ++timed_out; }
     else {
