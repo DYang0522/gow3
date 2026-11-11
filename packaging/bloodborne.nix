@@ -88,7 +88,7 @@ pkgs.stdenv.mkDerivation {
       ${common} \
       --add-flags "$out/share/bbport/launcher/bbport_launcher.py" \
       --set BB_PREBUILT 1 \
-      --set PYTHON ${startPython}/bin/python3 \
+      --set PYTHON ${python}/bin/python3 \
       --prefix PATH : ${lib.makeBinPath [ pkgs.bash pkgs.coreutils pkgs.util-linux ]} \
       --run 'export BB_DATA_DIR=''${BB_DATA_DIR:-''${XDG_DATA_HOME:-$HOME/.local/share}/bbport}; mkdir -p "$BB_DATA_DIR"'
   '';
