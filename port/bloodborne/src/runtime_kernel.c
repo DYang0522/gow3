@@ -453,17 +453,20 @@ static ABI int32_t module_info_from_addr(const void *address,int32_t flags,void 
         result.tls_size=(uint32_t)loaded_module_map.main_tls[2];
         result.tls_align=(uint32_t)loaded_module_map.main_tls[3];
     }
-    for (size_t i=0;i<loaded_module_map.segment_count && result.segment_count<4;++i) {
+    int address_in_segment=0;
+    for (size_t i=0;i<loaded_module_map.segment_count;++i) {
         const RuntimeImageSegment *segment=&loaded_module_map.segments[i];
-        if (segment->address<module_base || segment->address>=module_end ||
-            offset<segment->address || offset-segment->address>=segment->size)
-            continue;
-        const size_t n=result.segment_count++;
-        result.segments[n].address=loaded_module_map.image+segment->address;
-        result.segments[n].size=(uint32_t)segment->size;
-        result.segments[n].prot=(int32_t)segment->flags;
+        if (segment->address<module_base || segment->address>=module_end) continue;
+        if (offset>=segment->address && offset-segment->address<segment->size)
+            address_in_segment=1;
+        if (result.segment_count<4) {
+            const size_t n=result.segment_count++;
+            result.segments[n].address=loaded_module_map.image+segment->address;
+            result.segments[n].size=(uint32_t)segment->size;
+            result.segments[n].prot=(int32_t)segment->flags;
+        }
     }
-    if (!result.segment_count) return ERR(3);
+    if (!address_in_segment || !result.segment_count) return ERR(3);
     *(GuestModuleInfoEx *)out=result;
     return 0;
 }
