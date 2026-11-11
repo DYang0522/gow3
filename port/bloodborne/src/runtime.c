@@ -171,6 +171,8 @@ void runtime_finalize(void *dso) {
         else handler.callback.plain();
     }
 }
+/* ABI bridge for the guest libc's __cxa_finalize entry point. */
+static ABI void guest_finalize(void *dso) { runtime_finalize(dso); }
 static _Atomic uint32_t next_guard_owner=1;
 static _Thread_local uint32_t guard_owner;
 static ABI int guard_acquire(uint64_t *guard) {
