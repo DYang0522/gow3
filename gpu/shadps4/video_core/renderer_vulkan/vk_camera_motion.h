@@ -74,6 +74,14 @@ public:
     [[nodiscard]] float VerticalFov() const noexcept;
     [[nodiscard]] float Near() const noexcept;
     [[nodiscard]] float Far() const noexcept;
+    /// Compute the finite far plane from the projection; use fallback for an infinite one.
+    [[nodiscard]] float FarPlane(float fallback) const noexcept;
+    /// Current view-to-world transform, with all matrix elements checked for finiteness.
+    bool WorldCamera(std::array<float, 12>& inverse_view) const noexcept;
+    /// Row-vector D3D clip transforms: view->clip, current clip->previous clip, and reverse.
+    bool ClipTransforms(std::array<float, 16>& view_to_clip,
+                        std::array<float, 16>& clip_to_prev_clip,
+                        std::array<float, 16>& prev_clip_to_clip) const noexcept;
     [[nodiscard]] FrameGenerationCamera GetFrameGenerationCamera() const noexcept;
     // Current projection, previous projection, and row Z of previous-view * inverse-view.
     [[nodiscard]] std::array<std::array<float, 4>, 3> TaaDepthParameters() const noexcept;
