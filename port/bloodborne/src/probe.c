@@ -710,6 +710,10 @@ int main(int argc, char **argv) {
                         : (uintptr_t)image + relocs[i].value;
         if (relocs[i].kind) {
             uintptr_t resolved = runtime_resolve(names[relocs[i].value], relocs[i].kind == 2);
+            /* HLE libraries (libkernel, GNM, VideoOut and AvPlayer) register their
+               exports with bbgpu; data imports remain with the native-module binder. */
+            if (!resolved && relocs[i].kind == 1)
+                resolved = bbgpu_resolve(names[relocs[i].value]);
             if (resolved) value = resolved + relocs[i].addend;
             else if (native_libc && bindings[relocs[i].value]) {
                 uint64_t address=bindings[relocs[i].value];
