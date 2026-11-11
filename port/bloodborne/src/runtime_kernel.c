@@ -340,7 +340,7 @@ static ABI int32_t elf_phdr_match_addr(const GuestDlPhdrInfo *info,const void *a
     uintptr_t target=(uintptr_t)address;
     for (Elf64_Half i=0;i<info->dlpi_phnum;++i) {
         const Elf64_Phdr *ph=&info->dlpi_phdr[i];
-        if (ph->p_type!=PT_LOAD) continue;
+        if (ph->p_type!=PT_LOAD || (ph->p_flags&PF_X)==0) continue;
         uintptr_t start=(uintptr_t)info->dlpi_addr+(uintptr_t)ph->p_vaddr;
         if (target>=start && target-start<ph->p_memsz) return 1;
     }
