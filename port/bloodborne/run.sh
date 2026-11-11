@@ -23,6 +23,12 @@ mkdir -p "$out"
 export BB_CONFIG=${BB_CONFIG:-$data/bbport.ini}
 # The Bloodborne launcher name maps to the renderer's shared GPU selector.
 if [[ -n ${BB_GPU_ID:-} ]]; then export SPARTAN_GPU_ID=$BB_GPU_ID; fi
+# RADV exposes sparse binding/residency experimentally on pre-Polaris GPUs (including GFX7).
+# The Vulkan renderer requires both features; preserve any other RADV experimental options.
+case ",${RADV_EXPERIMENTAL:-}," in
+    *,sparse,*) ;;
+    *) export RADV_EXPERIMENTAL="${RADV_EXPERIMENTAL:+${RADV_EXPERIMENTAL},}sparse" ;;
+esac
 if [[ -z ${BB_PREBUILT:-} && -z ${BB_IN_NIX_SHELL:-} ]] && ! { command -v pkg-config >/dev/null && pkg-config --exists vulkan sdl3; } && command -v nix-shell >/dev/null; then
     args=''; if (( $# )); then args=$(printf '%q ' "$@"); fi
     script_q=$(printf '%q' "$script_dir/run.sh")
