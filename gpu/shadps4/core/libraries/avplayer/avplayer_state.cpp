@@ -432,6 +432,8 @@ std::optional<bool> AvPlayerState::OnBufferingCheckEvent(u32 num_frames) {
 // Called inside CONTROLLER thread
 void AvPlayerState::EmitEvent(AvPlayerEvents event_id, void* event_data) {
     LOG_INFO(Lib_AvPlayer, "Sending event to the game: id = {}", magic_enum::enum_name(event_id));
+    /* Decoder errors can emit events from worker threads, not only AvControllerThread. */
+    runtime_thread_attach_host("avplayer");
     const auto callback = m_init_data.event_replacement.event_callback;
     if (callback) {
         const auto ptr = m_init_data.event_replacement.object_ptr;
