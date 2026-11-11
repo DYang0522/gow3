@@ -650,7 +650,7 @@ def main():
         if clang64.is_dir():
             env['PATH'] = f'{clang64}{os.pathsep}{env.get("PATH", "")}'
 
-    game = Path(env.get('BB_GAME_DIR', PORT.parent / 'CUSA03173'))
+    game = Path(env.get('BB_GAME_DIR', PORT.parent.parent.parent / 'CUSA03173'))
     if not (game / 'eboot.bin').is_file():
         fail(f'No eboot.bin in {game} (set BB_GAME_DIR).')
     original_game = game.resolve()

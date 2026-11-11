@@ -83,7 +83,7 @@ HUD_POSITIONS = [("У краёв экрана", "100"), ("75%", "75"), ("Пос�
 
 DEFAULTS = {
     "ui_language": "",
-    "game_dir": "" if PACKAGED else str(PORT_DIR.parent.parent / "CUSA03173"),
+    "game_dir": "" if PACKAGED else str(PORT_DIR.parent.parent.parent / "CUSA03173"),
     "user_dir": "",
     "mods_dir": "",
     "mods_enabled": True,
