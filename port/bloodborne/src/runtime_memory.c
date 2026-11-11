@@ -443,7 +443,10 @@ static int split_at(uintptr_t a) {
 }
 /* Range [start,end) split on its edges; returns the first index inside it. */
 static size_t carve(uintptr_t start, uintptr_t end, int *error) {
-    *error = split_at(start) || split_at(end);
+    /* Keep both edge operations explicit; do not skip the end split on an error. */
+    const int start_error=split_at(start);
+    const int end_error=split_at(end);
+    *error=start_error || end_error;
     return vma_index(start);
 }
 static int covered(uintptr_t start, uintptr_t end, int allow_reserved) {
@@ -461,10 +464,12 @@ static int overlaps(uintptr_t start, uintptr_t end, int ignore_reserved) {
 }
 /* First-fit search in the PS4 user range, starting from the hint. */
 static uintptr_t find_free(uintptr_t hint, uint64_t size, uint64_t alignment) {
-    uintptr_t at=align_up(hint<USER_MIN ? USER_MIN : hint, alignment);
-    for (size_t i=vma_index(at); at+size<=USER_MAX; ++i) {
+    if (!size || size>USER_MAX-USER_MIN || hint>=USER_MAX) return 0;
+    uintptr_t at=align_up(hint<USER_MIN ? USER_MIN : hint,alignment);
+    for (size_t i=vma_index(at); at<=USER_MAX-size; ++i) {
         if (i==vma_count || vmas[i].start>=at+size) return at;
         at=align_up(vmas[i].end,alignment);
+        if (at>=USER_MAX) return 0;
     }
     return 0;
 }
@@ -486,14 +491,15 @@ static void drop_range(uintptr_t start, uintptr_t end) {
 static int32_t place(void **inout, uint64_t size, int prot, int flags, uint64_t alignment,
                      int kind, int type, uint64_t phys) {
     uintptr_t address=(uintptr_t)*inout;
+    if (!size || size>USER_MAX-USER_MIN) return INVALID;
     if (flags & MAP_FIXED_FLAG) {
-        if (!address || address%PAGE) return INVALID;
+        if (address<USER_MIN || address%PAGE || address>USER_MAX-size) return INVALID;
         if ((flags & MAP_NO_OVERWRITE) && overlaps(address,address+size,1)) return NO_MEMORY;
     } else {
         address=find_free(address,size,alignment);
         if (!address) return NO_MEMORY;
     }
-    if (size>USER_MAX-address || address<USER_MIN || address>USER_MAX) return INVALID;
+    if (address<USER_MIN || address>USER_MAX-size) return INVALID;
     /* Replacing a VMA can split its old left/right edges, then insert the new range. */
     if (vma_reserve(3)) return NO_MEMORY;
     if (host_map(address,size,host_prot(prot),kind==KIND_RESERVED,phys)) return NO_MEMORY;
@@ -514,10 +520,17 @@ static int block_type(uint64_t phys) {
     return -1;
 }
 static int direct_range_allocated(uint64_t phys, uint64_t size) {
-    for (uint64_t at=phys; at<phys+size;) {
+    if (!size || phys>=POOL_SIZE || size>POOL_SIZE-phys) return 0;
+    const uint64_t end=phys+size;
+    for (uint64_t at=phys; at<end;) {
         int found=0;
-        for (int i=0;i<LIMIT;++i) if (blocks[i].used && at>=blocks[i].start && at-blocks[i].start<blocks[i].size) {
-            at=blocks[i].start+blocks[i].size; found=1; break;
+        for (int i=0;i<LIMIT;++i) {
+            const Block b=blocks[i];
+            if (b.used && at>=b.start && at-b.start<b.size) {
+                at=b.start+b.size;
+                found=1;
+                break;
+            }
         }
         if (!found) return 0;
     }
@@ -695,15 +708,36 @@ static ABI int32_t direct_unmap(void *address, uint64_t size) {
 static ABI int32_t direct_release(uint64_t start, uint64_t size) {
     if (start % PAGE || size % PAGE) return INVALID;
     if (!size) return 0;
+    if (start>=POOL_SIZE || size>POOL_SIZE-start) return INVALID;
+    const uint64_t end=start+size;
     write_lock();
     if (!direct_range_allocated(start,size)) { write_unlock(); return INVALID; }
+
+    /* A release may split one allocation into left and right remnants. Reserve a
+       block-table slot for every such split before unmapping anything. */
+    size_t free_slots=0, split_slots=0;
+    for (int i=0;i<LIMIT;++i) {
+        const Block b=blocks[i];
+        if (!b.used) { ++free_slots; continue; }
+        if (b.start>=end || start>=b.start+b.size) continue;
+        const uint64_t a=b.start>start ? b.start : start;
+        const uint64_t e=b.start+b.size<end ? b.start+b.size : end;
+        if (a>b.start && e<b.start+b.size) ++split_slots;
+    }
+    if (split_slots>free_slots) { write_unlock(); return NO_SPACE; }
+
     /* Mappings of released physical pages disappear with them. */
     for (size_t i=0; i<vma_count;) {
         Vma v=vmas[i];
-        uint64_t length=v.end-v.start;
-        if (v.kind==KIND_DIRECT && v.phys<start+size && start<v.phys+length) {
-            uint64_t a=v.phys>start ? v.phys : start, b=v.phys+length<start+size ? v.phys+length : start+size;
-            unmap_locked(v.start+(a-v.phys),b-a);
+        const uint64_t length=v.end-v.start;
+        if (v.kind==KIND_DIRECT && v.phys<end && start<v.phys+length) {
+            const uint64_t a=v.phys>start ? v.phys : start;
+            const uint64_t b=v.phys+length<end ? v.phys+length : end;
+            if (unmap_locked(v.start+(a-v.phys),b-a)) {
+                write_unlock();
+                flush_hooks();
+                return NO_MEMORY;
+            }
             i=vma_index(v.start);
             continue;
         }
@@ -711,13 +745,21 @@ static ABI int32_t direct_release(uint64_t start, uint64_t size) {
     }
     for (int i=0; i<LIMIT; ++i) {
         Block *b=&blocks[i];
-        if (!b->used || b->start>=start+size || start>=b->start+b->size) continue;
-        uint64_t a=b->start>start ? b->start : start, e=b->start+b->size<start+size ? b->start+b->size : start+size;
+        if (!b->used || b->start>=end || start>=b->start+b->size) continue;
+        const uint64_t a=b->start>start ? b->start : start;
+        const uint64_t e=b->start+b->size<end ? b->start+b->size : end;
         Block left=*b, right=*b;
-        left.size=a-b->start; right.start=e; right.size=b->start+b->size-e;
+        left.size=a-b->start;
+        right.start=e;
+        right.size=b->start+b->size-e;
         b->used=0;
         if (left.size) *b=left;
-        if (right.size) for (int j=0;j<LIMIT;++j) if (!blocks[j].used) { blocks[j]=right; break; }
+        if (right.size) {
+            int slot=-1;
+            for (int j=0;j<LIMIT;++j) if (!blocks[j].used) { slot=j; break; }
+            if (slot<0) { fputs("ERROR: direct-memory split reservation lost\n",stderr); abort(); }
+            blocks[slot]=right;
+        }
         live_bytes-=e-a;
     }
     host_discard(start,size); /* zero on reuse */
@@ -727,7 +769,7 @@ static ABI int32_t direct_release(uint64_t start, uint64_t size) {
 }
 static int32_t map_flexible_locked(void **inout, uint64_t size, int prot, int flags) {
     if (!inout || !size || size%PAGE || (prot & ~0x37)) return INVALID;
-    if (flexible_bytes+size>FLEXIBLE_SIZE || pool()) return NO_MEMORY;
+    if (size>FLEXIBLE_SIZE-flexible_bytes || pool()) return NO_MEMORY;
     uint64_t phys=flex_alloc(size);
     if (phys==UINT64_MAX) return NO_MEMORY;
     int32_t result=place(inout,size,prot,flags,PAGE,KIND_FLEXIBLE,0,phys);
@@ -756,8 +798,14 @@ static ABI int32_t reserve_range(void **inout, uint64_t size, int flags, uint64_
     if (!inout || !size || size%PAGE || !valid_alignment(alignment)) return INVALID;
     void *address=*inout;
     write_lock();
-    if ((flags & MAP_FIXED_FLAG) && overlaps((uintptr_t)address,(uintptr_t)address+size,0)) {
-        write_unlock(); return NO_MEMORY;
+    if (flags & MAP_FIXED_FLAG) {
+        uintptr_t start=(uintptr_t)address;
+        if (start<USER_MIN || start%PAGE || start>USER_MAX-size) {
+            write_unlock(); return INVALID;
+        }
+        if (overlaps(start,start+size,0)) {
+            write_unlock(); return NO_MEMORY;
+        }
     }
     int32_t result=place(&address,size,0,flags,alignment,KIND_RESERVED,0,0);
     write_unlock();
