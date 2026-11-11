@@ -172,8 +172,12 @@ TemporalUpscaler::TemporalUpscaler(const Instance& instance_, Scheduler& schedul
     : instance{instance_}, scheduler{scheduler_}, texture_cache{texture_cache_},
       runtime{runtime_}, camera_motion{camera_motion_}, scene_targets{scene_targets_} {
     // Reject unsupported shaders before allocating resources or recording a frame.
+#ifdef BB_PORT_BUILD
+    PortSettings::ConfigureUpscalerSupport(instance.IsFsr4Int8Supported());
+#else
     PortSettings::ConfigureUpscalerSupport(instance.IsFsr4Int8Supported(),
-                                         instance.IsFsr411Supported());
+                                           instance.IsFsr411Supported());
+#endif
     fsr4 = std::make_unique<Fsr4Upscaler>(instance, scheduler);
     {
         const Dlss* dlss = Dlss::Get();
@@ -1957,9 +1961,13 @@ namespace Vulkan {
 
 bool TemporalUpscaler::UseFsr4() const {
     const int selected = PortSettings::Get().upscaler;
+#ifdef BB_PORT_BUILD
+    const bool supported = instance.IsFsr4Int8Supported();
+#else
     const bool supported = selected == PortSettings::UpscalerFsr411
                                ? instance.IsFsr411Supported()
                                : instance.IsFsr4Int8Supported();
+#endif
     return PortSettings::IsFsr4(selected) && supported && !fsr4_failed;
 }
 

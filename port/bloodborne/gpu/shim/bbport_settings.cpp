@@ -75,10 +75,6 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.reactive = i != 0;
     } else if (key == "object_motion") {
         v.object_motion = i != 0;
-    } else if (key == "fsr411_backend") {
-        v.fsr411_backend = value == "dx12" ? Fsr411Dx12 : Fsr411Vulkan;
-    } else if (key == "fsr41_version") {
-        v.fsr41_version = value == "fsr411" ? UpscalerFsr411 : UpscalerFsr412;
     } else if (key == "object_motion_cache") {
         v.object_motion_cache = value == "1";
     } else if (key == "fsr_compatibility_options") {
@@ -149,9 +145,6 @@ void Load() {
     v.frame_gen_problem = nullptr;
     v.fg401_problem = nullptr;
     v.fg402_problem = nullptr;
-    v.fsr411_backend = Fsr411Vulkan;
-    v.fsr41_version = UpscalerFsr412;
-    v.fsr4_method_problem = nullptr;
     v.object_motion_cache = false;
     v.fsr_compatibility_options = false;
     for (int e = 0; e < EffectCount; ++e) {
@@ -177,7 +170,8 @@ void Load() {
     }
     // Environment overrides (scripts, A/B tests).
     if (const char* env = std::getenv("BB_UPSCALER")) {
-        v.upscaler = UpscalerOff;
+        v.upscaler = (!std::strcmp(env, "fsr411") || !std::strcmp(env, "fsr412"))
+                         ? UpscalerFsr3 : UpscalerOff;
         for (int u = 0; u < UpscalerCount; ++u) {
             if (std::strcmp(env, UpscalerName(u)) == 0) v.upscaler = u;
         }
@@ -195,26 +189,16 @@ void Load() {
             Set(v, key, value);
         }
     }
-    // Direct engine launches retain the explicit A/B overrides. Launcher starts refresh
-    // their derived environment from this file in run.py, including after an overlay restart.
+    // Direct engine launches retain the object-motion cache override.
     const char* shared = std::getenv("BB_SHARED_GRAPHICS_CONFIG");
     if (!shared || std::strcmp(shared, "1") != 0) {
-        if (const char* native = std::getenv("BB_FSR411_NATIVE")) {
-            v.fsr411_backend = native[0] == '1' ? Fsr411Dx12 : Fsr411Vulkan;
-        }
-        if (const char* backend = std::getenv("BB_FSR411_BACKEND")) {
-            Set(v, "fsr411_backend", backend);
-        }
         if (const char* cache = std::getenv("BB_OBJECT_MOTION_CACHE")) {
             Set(v, "object_motion_cache", cache);
         }
     }
     v.startup_preset = v.preset;
-    if (v.upscaler == UpscalerFsr411 || v.upscaler == UpscalerFsr412) v.fsr41_version = v.upscaler.load();
     v.startup_upscaler = v.upscaler;
     v.startup_object_motion = v.object_motion;
-    v.startup_fsr411_backend = v.fsr411_backend;
-    v.active_fsr411_backend = v.fsr411_backend.load();
     v.startup_object_motion_cache = v.object_motion_cache;
     for (int e = 0; e < EffectCount; ++e) {
         v.startup_effects[e] = v.effects[e];
@@ -228,24 +212,14 @@ void Load() {
     v.startup_live_resolution = v.live_resolution;
 }
 
-void ConfigureUpscalerSupport(bool fsr4, bool fsr411, const char* fsr411_problem) {
+void ConfigureUpscalerSupport(bool fsr4) {
     auto& v = Get();
     v.fsr4_supported = fsr4;
-    v.fsr411_supported = fsr411;
-    static std::string method_problem;
-    method_problem = fsr411 ? "" : fsr411_problem ? fsr411_problem :
-        "GPU/driver does not support the selected FSR 4.1.1 method";
-    v.fsr411_problem = method_problem.empty() ? nullptr : method_problem.c_str();
-    const int requested = v.upscaler;
-    if ((requested == UpscalerFsr4 && !v.fsr4_supported) ||
-        (requested == UpscalerFsr411 && !v.fsr411_supported)) {
-        static std::string kept;
-        kept = requested == UpscalerFsr411 && fsr411_problem ? fsr411_problem :
-            "GPU/driver does not support the selected FSR 4 shaders";
-        std::printf("Upscaler: %s unavailable: %s; falling back to FSR 3.1 before the first frame\n",
-                    UpscalerName(requested), kept.c_str());
-        kept += "; using FSR 3.1";
-        v.fsr4_problem = kept.c_str();
+    if (v.upscaler == UpscalerFsr4 && !fsr4) {
+        static constexpr const char* problem = "GPU/driver does not support the FSR 4 INT8 shaders";
+        std::printf("Upscaler: FSR 4 unavailable: %s; falling back to FSR 3.1 before the first frame\n",
+                    problem);
+        v.fsr4_problem = problem;
         v.upscaler = UpscalerFsr3;
     }
 }
@@ -355,11 +329,8 @@ void Save() {
     for (const Readout& readout : Readouts) {
         std::fprintf(file, "%s=%d\n", readout.key, int((v.*readout.member).load()));
     }
-    std::fprintf(file, "fsr411_backend=%s\nobject_motion_cache=%d\n",
-                 v.fsr411_backend == Fsr411Dx12 ? "dx12" : "vk",
-                 int(v.object_motion_cache.load()));
+    std::fprintf(file, "object_motion_cache=%d\n", int(v.object_motion_cache.load()));
     std::fprintf(file, "fsr_compatibility_options=%d\n", int(v.fsr_compatibility_options.load()));
-    std::fprintf(file, "fsr41_version=%s\n", v.fsr41_version == UpscalerFsr411 ? "fsr411" : "fsr412");
     // Read by patches.py at start.
     for (int e = 0; e < EffectCount; ++e) {
         std::fprintf(file, "%s=%d\n", Effects[e].key, int(v.effects[e].load()));
@@ -408,7 +379,7 @@ const char* FrameGenName(int frame_gen) {
 }
 
 const char* UpscalerName(int upscaler) {
-    static constexpr const char* names[UpscalerCount] = {"off", "fsr3", "fsr4", "fsr411", "taa", "dlss", "fsr412"};
+    static constexpr const char* names[UpscalerCount] = {"off", "fsr3", "fsr4", "taa", "dlss"};
     return names[std::clamp(upscaler, 0, UpscalerCount - 1)];
 }
 

@@ -363,12 +363,9 @@ def refresh_shared_graphics(env, config):
                 values[key.strip()] = value.strip()
     except OSError:
         pass
-    backend = 'dx12' if values.get('fsr411_backend') == 'dx12' else 'vk'
-    env['BB_FSR411_BACKEND'] = backend
-    env['BB_FSR411_NATIVE'] = '1' if backend == 'dx12' else '0'
     cache = values.get('object_motion_cache') == '1' and \
         values.get('object_motion', '1') == '1' and \
-        values.get('upscaler', 'fsr4') in ('fsr3', 'fsr4', 'fsr411', 'fsr412')
+        values.get('upscaler', 'fsr3') in ('fsr3', 'fsr4')
     env['BB_OBJECT_MOTION_CACHE'] = '1' if cache else '0'
     # Frame rate mode and cap: the launcher and the game's PC Settings page share them.
     if values.get('fps_mode') in ('30', '60', '90', 'uncap'):
@@ -638,9 +635,6 @@ def main():
     env.setdefault('BB_CONFIG', str(data / 'bbport.ini'))
     config = env['BB_CONFIG']
     refresh_shared_graphics(env, config)
-    env.setdefault('BB_FSR4VK_DIR', str((data / 'fsr4vk').resolve()))
-    if not env.get('BB_FSR411_DIR') and not (PORT / 'fsr4_411').is_dir() and (data / 'fsr4_411').is_dir():
-        env['BB_FSR411_DIR'] = str(data / 'fsr4_411')
 
     probe = Path(env['BB_PROBE']) if env.get('BB_PROBE') else find_executable('bb-probe.exe')
     if not probe or not probe.is_file():

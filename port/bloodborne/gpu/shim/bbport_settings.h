@@ -9,15 +9,11 @@
 
 namespace BbSettings {
 
-enum Upscaler : int { UpscalerOff = 0, UpscalerFsr3 = 1, UpscalerFsr4 = 2, UpscalerFsr411 = 3,
-                      UpscalerTaa = 4, UpscalerDlss = 5, UpscalerFsr412 = 6, UpscalerCount };
-/// FSR 4 v07 or FSR 4.1.1: the same inputs, settings and placement in the frame.
+enum Upscaler : int { UpscalerOff = 0, UpscalerFsr3 = 1, UpscalerFsr4 = 2,
+                      UpscalerTaa = 3, UpscalerDlss = 4, UpscalerCount };
+/// FSR 4 v07 uses the same temporal inputs and placement in the frame.
 inline bool IsFsr4(int upscaler) {
-    return upscaler == UpscalerFsr4 || upscaler == UpscalerFsr411 || upscaler == UpscalerFsr412;
-}
-/// Every FSR 4.1 provider delegates RCAS to the host, independently of other providers.
-inline bool UsesHostSharpen(int upscaler, bool active) {
-    return active && (upscaler == UpscalerFsr411 || upscaler == UpscalerFsr412);
+    return upscaler == UpscalerFsr4;
 }
 enum Preset : int { NativeAA = 0, Quality, Balanced, Performance, UltraPerformance, PresetCount };
 enum DebugView : int { DebugNone = 0, DebugReactive = 1, DebugMotion = 2, DebugViewCount };
@@ -27,8 +23,6 @@ enum FrameGen : int { FrameGenOff = 0, FrameGenFsr3 = 1, FrameGenDlss = 2, Frame
 inline bool IsMlFrameGen(int provider) {
     return provider == FrameGenFsr401 || provider == FrameGenFsr402;
 }
-enum Fsr411Backend : int { Fsr411Vulkan = 0, Fsr411Dx12 = 1 };
-
 /// Game effects switched by the community patches at start (patches.py EFFECTS): ini key,
 /// menu label, default (the game's own behaviour).
 struct Effect {
@@ -101,18 +95,6 @@ struct Values {
     std::atomic<bool> jitter{true};
     std::atomic<bool> reactive{false};
     std::atomic<bool> object_motion{true};
-    /// Shared launcher/overlay preference; the renderer applies it at a frame boundary.
-    std::atomic<int> fsr411_backend{Fsr411Vulkan};
-    std::atomic<int> fsr41_version{UpscalerFsr412};
-    std::atomic<int> active_fsr411_backend{Fsr411Vulkan};
-    int ActiveFsr411Backend() const { return active_fsr411_backend.load(); }
-    std::atomic<bool> fsr41_backend_supported[2][2]{};
-    /// FSR41 UI status codes shared with the launcher (bbport_fsr41.py).
-    std::atomic<int> fsr41_status[2][2]{{5, 5}, {5, 5}};
-    bool FsrMethodSupported(int version, int method) const {
-        return fsr41_backend_supported[version == UpscalerFsr412][method].load();
-    }
-    std::atomic<const char*> fsr4_method_problem{nullptr};
     std::atomic<bool> object_motion_cache{false};
     /// UI visibility only; saved compatibility selections remain visible.
     std::atomic<bool> fsr_compatibility_options{false};
@@ -161,8 +143,7 @@ struct Values {
     std::atomic<int> live_resolution{0};
     /// Why FSR 4 cannot run (assets, device features), or null. Set by the renderer.
     std::atomic<const char*> fsr4_problem{nullptr};
-    std::atomic<bool> fsr4_supported{false}, fsr411_supported{false};
-    std::atomic<const char*> fsr411_problem{nullptr};
+    std::atomic<bool> fsr4_supported{false};
     /// DLSS (bbport_dlss.dll, NVIDIA RTX) is ready, or why not (null before the device exists).
     std::atomic<bool> dlss_supported{false};
     std::atomic<const char*> dlss_problem{nullptr};
@@ -219,7 +200,6 @@ struct Values {
     int startup_preset = NativeAA;
     int startup_upscaler = UpscalerFsr3;
     bool startup_object_motion = true;
-    int startup_fsr411_backend = Fsr411Vulkan;
     bool startup_object_motion_cache = false;
     bool startup_effects[EffectCount]{};
     int startup_model_lod = 0;
@@ -236,7 +216,7 @@ Values& Get();
 /// Reads the file, then the environment overrides. Called once at start.
 void Load();
 /// Checks the loaded choice before the first frame; unsupported FSR 4 uses FSR 3.1.
-void ConfigureUpscalerSupport(bool fsr4, bool fsr411, const char* fsr411_problem = nullptr);
+void ConfigureUpscalerSupport(bool fsr4);
 /// After device creation: DLSS availability; a DLSS setting falls back to FSR 3.1 without it.
 void ConfigureDlssSupport(bool available, const char* problem);
 void ConfigureFg401Support(bool available, const char* problem, int provider = FrameGenFsr401);
