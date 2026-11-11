@@ -352,12 +352,120 @@ static ABI int32_t elf_phdr_match_addr(const GuestDlPhdrInfo *info,const void *a
     }
     return 0;
 }
-/* Module metadata is not exposed by this static loader; report ESRCH for unknown images. */
-static ABI int32_t module_info_from_addr(const void *address,int32_t flags,void *info) {
-    (void)address;
-    if (flags>=3) return ERR(22);
-    if (!info) return ERR(14);
-    return ERR(3);
+typedef struct {
+    uint64_t st_size;
+    char name[256];
+    int32_t id;
+    uint32_t tls_index;
+    uint64_t tls_init_addr;
+    uint32_t tls_init_size;
+    uint32_t tls_size;
+    uint32_t tls_offset;
+    uint32_t tls_align;
+    uint64_t init_proc_addr;
+    uint64_t fini_proc_addr;
+    uint64_t reserved1;
+    uint64_t reserved2;
+    uint64_t eh_frame_hdr_addr;
+    uint64_t eh_frame_addr;
+    uint32_t eh_frame_hdr_size;
+    uint32_t eh_frame_size;
+    struct { uint64_t address; uint32_t size; int32_t prot; } segments[4];
+    uint32_t segment_count;
+} GuestModuleInfoEx;
+_Static_assert(sizeof(GuestModuleInfoEx)==424,"PS4 module info layout");
+
+static struct {
+    uintptr_t image;
+    uint64_t image_size, entry;
+    const RuntimeImageSegment *segments;
+    size_t segment_count;
+    const RuntimeImageModule *modules;
+    size_t module_count;
+    uint64_t main_tls[4];
+} loaded_module_map;
+
+void runtime_kernel_set_module_map(void *image, uint64_t image_size, uint64_t entry,
+                                   const RuntimeImageSegment *segments, size_t segment_count,
+                                   const RuntimeImageModule *modules, size_t module_count,
+                                   const uint64_t main_tls[4]) {
+    loaded_module_map.image=(uintptr_t)image;
+    loaded_module_map.image_size=image_size;
+    loaded_module_map.entry=entry;
+    loaded_module_map.segments=segments;
+    loaded_module_map.segment_count=segment_count;
+    loaded_module_map.modules=modules;
+    loaded_module_map.module_count=module_count;
+    if (main_tls) memcpy(loaded_module_map.main_tls,main_tls,sizeof(loaded_module_map.main_tls));
+    else memset(loaded_module_map.main_tls,0,sizeof(loaded_module_map.main_tls));
+}
+
+/* Report the eboot or linked system module containing this address. */
+static ABI int32_t module_info_from_addr(const void *address,int32_t flags,void *out) {
+    if (!out) return ERR(14);
+    if (flags>=3) {
+        memset(out,0,sizeof(GuestModuleInfoEx));
+        return ERR(22);
+    }
+    const uintptr_t target=(uintptr_t)address;
+    if (!loaded_module_map.image || target<loaded_module_map.image ||
+        target-loaded_module_map.image>=loaded_module_map.image_size)
+        return ERR(3);
+    const uint64_t offset=target-loaded_module_map.image;
+    size_t module_index=SIZE_MAX;
+    uint64_t module_base=0,module_end=loaded_module_map.module_count
+        ? loaded_module_map.modules[0].base : loaded_module_map.image_size;
+    const RuntimeImageModule *module=NULL;
+    if (offset<module_end) {
+        module_index=0;
+    } else {
+        for (size_t i=0;i<loaded_module_map.module_count;++i) {
+            const RuntimeImageModule *candidate=&loaded_module_map.modules[i];
+            if (offset>=candidate->base && offset-candidate->base<candidate->size) {
+                module_index=i+1;
+                module_base=candidate->base;
+                module_end=candidate->base+candidate->size;
+                module=candidate;
+                break;
+            }
+        }
+    }
+    if (module_index==SIZE_MAX || offset<module_base || offset>=module_end) return ERR(3);
+
+    GuestModuleInfoEx result={0};
+    result.st_size=sizeof(result);
+    result.id=(int32_t)module_index;
+    const char *name=module ? module->name : "eboot.bin";
+    snprintf(result.name,sizeof(result.name),"%s",name ? name : "linked-module");
+    result.init_proc_addr=loaded_module_map.image+(module ? module->init : loaded_module_map.entry);
+    if (module) {
+        result.tls_index=(uint32_t)module->tls_module;
+        if (module->tls_memsz) {
+            result.tls_init_addr=loaded_module_map.image+module->tls_address;
+            result.tls_init_size=(uint32_t)module->tls_filesz;
+            result.tls_size=(uint32_t)module->tls_memsz;
+            result.tls_align=(uint32_t)module->tls_align;
+        }
+    } else if (loaded_module_map.main_tls[2]) {
+        result.tls_index=1;
+        result.tls_init_addr=loaded_module_map.image+loaded_module_map.main_tls[0];
+        result.tls_init_size=(uint32_t)loaded_module_map.main_tls[1];
+        result.tls_size=(uint32_t)loaded_module_map.main_tls[2];
+        result.tls_align=(uint32_t)loaded_module_map.main_tls[3];
+    }
+    for (size_t i=0;i<loaded_module_map.segment_count && result.segment_count<4;++i) {
+        const RuntimeImageSegment *segment=&loaded_module_map.segments[i];
+        if (segment->address<module_base || segment->address>=module_end ||
+            offset<segment->address || offset-segment->address>=segment->size)
+            continue;
+        const size_t n=result.segment_count++;
+        result.segments[n].address=loaded_module_map.image+segment->address;
+        result.segments[n].size=(uint32_t)segment->size;
+        result.segments[n].prot=(int32_t)segment->flags;
+    }
+    if (!result.segment_count) return ERR(3);
+    *(GuestModuleInfoEx *)out=result;
+    return 0;
 }
 
 static const RuntimeExport exports[]={
