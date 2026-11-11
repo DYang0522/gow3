@@ -1030,14 +1030,17 @@ void runtime_memory_set_gpu_hooks(GpuRange map, GpuRange unmap, GpuRange invalid
 }
 /* Writes through the backing view; 0 when part of the range has no backing. */
 int runtime_memory_write_backing(uintptr_t address, const void *data, uint64_t size) {
+    if (!size) return 1;
+    if (!data || address<USER_MIN || address>=USER_MAX || size>USER_MAX-address) return 0;
+    const uintptr_t end=address+(uintptr_t)size;
     read_lock();
     int ok=1;
-    for (uintptr_t at=address, end=address+size; at<end && ok;) {
+    for (uintptr_t at=address; at<end && ok;) {
         size_t i=vma_index(at);
         if (i==vma_count || vmas[i].start>at || vmas[i].kind==KIND_RESERVED) { ok=0; break; }
         uint64_t n=(vmas[i].end<end ? vmas[i].end : end)-at;
-        memcpy(backing_base+vmas[i].phys+(at-vmas[i].start),(const unsigned char *)data+(at-address),n);
-        at+=n;
+        memcpy(backing_base+vmas[i].phys+(at-vmas[i].start),(const unsigned char *)data+(at-address),(size_t)n);
+        at+=(uintptr_t)n;
     }
     read_unlock();
     return ok;
@@ -1047,20 +1050,26 @@ int runtime_memory_write_backing(uintptr_t address, const void *data, uint64_t s
  * GPU thread for a readback while it waits for these very copies (a hang at start). Gaps read
  * as zeros. */
 void runtime_memory_read_backing(uintptr_t address, void *data, uint64_t size) {
+    if (!size || !data) return;
+    if (address<USER_MIN || address>=USER_MAX || size>USER_MAX-address) {
+        memset(data,0,(size_t)size);
+        return;
+    }
     unsigned char *out=data;
+    const uintptr_t end=address+(uintptr_t)size;
     read_lock();
-    for (uintptr_t at=address, end=address+size; at<end;) {
+    for (uintptr_t at=address; at<end;) {
         const size_t i=vma_index(at);
         uint64_t n;
         if (i<vma_count && vmas[i].start<=at && vmas[i].kind!=KIND_RESERVED) {
             n=(vmas[i].end<end ? vmas[i].end : end)-at;
-            memcpy(out+(at-address),backing_base+vmas[i].phys+(at-vmas[i].start),n);
+            memcpy(out+(at-address),backing_base+vmas[i].phys+(at-vmas[i].start),(size_t)n);
         } else {
             const uintptr_t next=i==vma_count ? end : vmas[i].start>at ? vmas[i].start : vmas[i].end;
             n=(next<end ? next : end)-at;
-            memset(out+(at-address),0,n);
+            memset(out+(at-address),0,(size_t)n);
         }
-        at+=n;
+        at+=(uintptr_t)n;
     }
     read_unlock();
 }
@@ -1086,6 +1095,9 @@ static void cache_region(size_t i) {
 }
 /* Mapped length from address, up to size, across adjacent mappings. */
 uint64_t runtime_memory_clamp(uintptr_t address, uint64_t size) {
+    if (!size || address<USER_MIN || address>=USER_MAX) return 0;
+    const uint64_t available=USER_MAX-address;
+    if (size>available) size=available;
     const CachedRegion *c=(runtime_disabled_optimizations & 1) ? NULL : cached_region(address);
     if (c && c->kind!=KIND_RESERVED && size<=c->end-address) return size;
     read_lock();
@@ -1116,11 +1128,13 @@ int runtime_memory_region(uintptr_t address, uintptr_t *start, uintptr_t *end, i
 }
 /* GPU page tracking: restrict host access, never beyond the guest's own protection. */
 void runtime_memory_gpu_protect(uintptr_t address, uint64_t size, int read, int write) {
+    if (!size || address<USER_MIN || address>=USER_MAX || size>USER_MAX-address) return;
+    const uintptr_t end=address+(uintptr_t)size;
     read_lock();
-    for (size_t i=vma_index(address); i<vma_count && vmas[i].start<address+size; ++i) {
+    for (size_t i=vma_index(address); i<vma_count && vmas[i].start<end; ++i) {
         if (vmas[i].kind==KIND_RESERVED) continue;
         uintptr_t a=vmas[i].start>address ? vmas[i].start : address;
-        uintptr_t b=vmas[i].end<address+size ? vmas[i].end : address+size;
+        uintptr_t b=vmas[i].end<end ? vmas[i].end : end;
         int guest=host_prot(vmas[i].prot);
         int want=(read ? PROT_READ : 0)|(write ? PROT_WRITE|PROT_READ : 0)|(guest & PROT_EXEC);
         host_protect(a,b-a,guest & want);
@@ -1129,10 +1143,12 @@ void runtime_memory_gpu_protect(uintptr_t address, uint64_t size, int read, int 
 }
 /* Host view of a guest range, for the GPU backend: the range must be mapped. */
 int runtime_memory_is_mapped(uintptr_t address, uint64_t size) {
+    if (!size || address<USER_MIN || address>=USER_MAX || size>USER_MAX-address) return 0;
     const CachedRegion *c=(runtime_disabled_optimizations & 1) ? NULL : cached_region(address);
     if (c && c->kind!=KIND_RESERVED && size<=c->end-address) return 1;
+    const uintptr_t end=address+(uintptr_t)size;
     read_lock();
-    int result=covered(address,address+size,0);
+    int result=covered(address,end,0);
     read_unlock();
     return result;
 }
