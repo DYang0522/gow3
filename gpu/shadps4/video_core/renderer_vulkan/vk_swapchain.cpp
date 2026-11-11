@@ -9,7 +9,13 @@
 #include "common/assert.h"
 #include "common/logging/log.h"
 #include "core/emulator_settings.h"
+#ifdef BB_PORT_BUILD
+#include "bbport_settings.h"
+namespace PortSettings = BbSettings;
+#else
 #include "spartanport_settings.h"
+namespace PortSettings = SpartanSettings;
+#endif
 #include "imgui/renderer/imgui_core.h"
 #include "sdl_window.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -309,7 +315,7 @@ void Swapchain::FindPresentMode() {
 
     // spartanport: VSync on is Fifo (no tearing, waits for the display); off is Mailbox when the
     // driver has it, else Immediate (tearing allowed), else Fifo.
-    vsync = SpartanSettings::Get().vsync;
+    vsync = PortSettings::Get().vsync;
     const auto has = [&](vk::PresentModeKHR mode) { return std::ranges::find(modes, mode) != modes.cend(); };
     present_mode = vsync ? vk::PresentModeKHR::eFifo
                    : has(vk::PresentModeKHR::eMailbox) ? vk::PresentModeKHR::eMailbox
@@ -321,7 +327,7 @@ void Swapchain::FindPresentMode() {
 }
 
 void Swapchain::UpdateVsync() {
-    if (SpartanSettings::Get().vsync == vsync) {
+    if (PortSettings::Get().vsync == vsync) {
         return;
     }
     if (const auto result = instance.GetDevice().waitIdle(); result != vk::Result::eSuccess) {

@@ -86,7 +86,11 @@ struct Dlss::Impl {
 
 Dlss* Dlss::Get() {
     static Dlss* const dlss = []() -> Dlss* {
+#ifdef BB_PORT_BUILD
+        const char* setting = std::getenv("BB_DLSS");
+#else
         const char* setting = std::getenv("SPARTAN_DLSS");
+#endif
         if (setting && setting[0] == '0') {
             return nullptr;
         }
@@ -120,7 +124,11 @@ Dlss::Dlss() : impl{std::make_unique<Impl>()} {
     }
     // NGX writes its logs and model updates here: beside the saves and shader caches.
     std::filesystem::path data = directory / "dlss";
+#ifdef BB_PORT_BUILD
+    if (const char* user = std::getenv("BB_GPU_USER_DIR"); user && user[0]) {
+#else
     if (const char* user = std::getenv("SPARTAN_GPU_USER_DIR"); user && user[0]) {
+#endif
         data = std::filesystem::path{user} / "dlss";
     }
     std::error_code error;

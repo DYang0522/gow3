@@ -614,6 +614,9 @@ void Menu() {
         ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "%s", problem);
     }
 
+    Checkbox("Vertical sync", s.vsync);
+    Hint("On: wait for the display refresh and prevent tearing. Off: use Mailbox or Immediate when the driver supports it.");
+
     ImGui::SeparatorText("Output resolution");
     static const char* outputs[] = {"1280 x 720", "1920 x 1080", "2560 x 1440", "3840 x 2160",
                                     "2560 x 1080 (21:9)", "3440 x 1440 (21:9)",

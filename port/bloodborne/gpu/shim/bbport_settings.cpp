@@ -41,13 +41,16 @@ constexpr Readout Readouts[] = {
 void Set(Values& v, const std::string& key, const std::string& value) {
     const float f = float(std::atof(value.c_str()));
     const int i = std::atoi(value.c_str());
+    std::fprintf(file, "vsync=%d\n", int(v.vsync.load()));
     for (const Readout& readout : Readouts) {
         if (key == readout.key) {
             v.*readout.member = value != "0";
             return;
         }
     }
-    if (key == "upscaler") {
+    if (key == "vsync") {
+        v.vsync = i != 0;
+    } else if (key == "upscaler") {
         for (int u = 0; u < UpscalerCount; ++u) {
             if (value == UpscalerName(u)) {
                 v.upscaler = u;
@@ -183,6 +186,7 @@ void Load() {
         {"BB_UPSCALE_PRESET", "preset"},            {"BB_OBJECT_MOTION", "object_motion"},
         {"BB_FRAME_GEN", "frame_gen"},              {"BB_FRAME_GEN_MULTIPLIER", "frame_gen_multiplier"},
         {"BB_FRAME_GEN_FIT_DISPLAY", "frame_gen_fit_display"},
+        {"BB_VSYNC", "vsync"},
     };
     for (const auto& [env, key] : env_keys) {
         if (const char* value = std::getenv(env)) {

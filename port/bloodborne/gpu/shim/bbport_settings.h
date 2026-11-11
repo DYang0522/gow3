@@ -127,6 +127,7 @@ struct Values {
     std::atomic<bool> effects[EffectCount]{};
     std::atomic<int> model_lod{0}; ///< -2 highest .. 2 lowest, 0 the game's
     std::atomic<int> output_res{OutputDefault}; ///< index into OutputWidths
+    std::atomic<bool> vsync{true}; ///< FIFO presentation; off selects Mailbox/Immediate when available
     /// Ultrawide outputs: the HUD's corner groups, 0 centred in 16:9 .. 100 at the screen edges
     /// (hud_layout.py at start).
     std::atomic<int> hud_position{100};
