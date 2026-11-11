@@ -613,6 +613,8 @@ def main():
     # As run.sh: relative paths (BB_GAME_DIR, BB_DATA_DIR) are from the port.
     os.chdir(PORT)
     env = os.environ
+    if env.get('BB_GPU_ID'):
+        env['SPARTAN_GPU_ID'] = env['BB_GPU_ID']
     note = files_note(PORT)
     if note:
         print(note)
