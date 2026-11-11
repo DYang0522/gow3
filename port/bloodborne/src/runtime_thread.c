@@ -39,7 +39,7 @@ typedef struct ThreadAttr {
 typedef struct GuestThread {
     /* Guest-visible TCB is allocated separately; this is the ScePthread handle. */
     uint64_t *tcb;
-    uint64_t dtv[3]; /* Each guest thread owns its dynamic-thread-vector header. */
+    uint64_t dtv[9]; /* DTV[0] generation; DTV[module+1] is that module's TLS block. */
     unsigned char *tls_block;
     pthread_t host;
     GuestEntry entry;
@@ -132,6 +132,7 @@ void runtime_thread_attach_host(const char *name) {
     GuestThread *t=runtime_thread_current();
     snprintf(t->name,sizeof(t->name),"%s",name ? name : "host");
 }
+uint64_t *runtime_thread_dtv(void) { return runtime_thread_current()->dtv; }
 void runtime_thread_attach_main(void) {
     GuestThread *t=runtime_thread_current();
     snprintf(t->name,sizeof(t->name),"main");
