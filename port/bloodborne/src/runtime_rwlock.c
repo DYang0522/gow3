@@ -34,11 +34,11 @@ typedef struct Rwlock {
 #endif
 enum { CHUNK=1024, CHUNKS=4096 };
 typedef struct { int64_t seconds, nanoseconds; } GuestTime;
-/* Making and destroying locks; using them takes no global lock. */
+/* Lock records are never reused: a stale guest handle must never alias a new lock. */
 static pthread_mutex_t pool_lock = PTHREAD_MUTEX_INITIALIZER;
 static Rwlock *chunks[CHUNKS];
 static unsigned chunk_count, next_unused;
-static Rwlock *free_records;
+/* Destroyed records remain DEAD in their permanent pool slot. */
 static size_t created, reads, writes, unlocks;
 /* The locks this thread holds: a thread rarely holds more than a few at once. */
 typedef struct { Rwlock *lock; unsigned readers, writer; } Held;
@@ -73,26 +73,22 @@ static Rwlock *live(Rwlock *handle) {
 }
 /* Requires pool_lock. */
 static int make_locked(Rwlock **out) {
-    Rwlock *r=free_records;
-    if (r) free_records=r->next_free;
-    else {
-        unsigned n=chunk_count;
-        if (!n || next_unused==CHUNK) {
-            if (n==CHUNKS) return ENOMEM;
-            Rwlock *chunk=chunk_alloc(CHUNK*sizeof(*chunk)); /* never freed */
-            if (!chunk) return ENOMEM;
-            memset(chunk,0,CHUNK*sizeof(*chunk));
-            for (unsigned i=0;i<CHUNK;++i) chunk[i].users=DEAD;
-            chunks[n++]=chunk; next_unused=0;
-            __atomic_store_n(&chunk_count,n,__ATOMIC_RELEASE);
-        }
-        r=&chunks[n-1][next_unused++];
+    unsigned n=chunk_count;
+    if (!n || next_unused==CHUNK) {
+        if (n==CHUNKS) return ENOMEM;
+        Rwlock *chunk=chunk_alloc(CHUNK*sizeof(*chunk)); /* never freed */
+        if (!chunk) return ENOMEM;
+        memset(chunk,0,CHUNK*sizeof(*chunk));
+        for (unsigned i=0;i<CHUNK;++i) chunk[i].users=DEAD;
+        chunks[n++]=chunk; next_unused=0;
+        __atomic_store_n(&chunk_count,n,__ATOMIC_RELEASE);
     }
+    Rwlock *r=&chunks[n-1][next_unused++];
 #ifdef _WIN32
     InitializeSRWLock(&r->native);
 #else
     int e=pthread_rwlock_init(&r->native,NULL);
-    if (e) { r->next_free=free_records; free_records=r; return e; }
+    if (e) return e; /* The failed slot stays DEAD and is not recycled. */
 #endif
     /* Clears only DEAD: a late call with a stale handle may still be counting itself in. */
     __atomic_fetch_and(&r->users,~DEAD,__ATOMIC_RELEASE);
@@ -231,7 +227,7 @@ static ABI int32_t rw_destroy(Rwlock **handle) {
     int e=pthread_rwlock_destroy(&r->native);
     if (e) { __atomic_store_n(&r->users,0,__ATOMIC_RELEASE); pthread_mutex_unlock(&pool_lock); return error(e); }
 #endif
-    r->next_free=free_records; free_records=r;
+    /* Keep the DEAD record allocated: stale copies of this pointer must stay invalid. */
     *handle=(Rwlock *)(uintptr_t)1;
     pthread_mutex_unlock(&pool_lock); return 0;
 }
