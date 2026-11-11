@@ -88,7 +88,7 @@ private:
     bool reset = true;
     bool last_hudless = false;
     u32 hudless_changes = 0;
-    std::chrono::steady_clock::time_point last_generate{}, last_capture{};
+    std::chrono::steady_clock::time_point last_capture{};
     float capture_frame_ms = 16.6f;
 
     FfxVkFsr3_3_1_6FrameGenerationContext* fsr3 = nullptr;
