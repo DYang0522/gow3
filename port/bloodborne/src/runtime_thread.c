@@ -50,6 +50,7 @@ typedef struct ThreadAttr {
 typedef struct GuestThread {
     /* Guest-visible TCB is allocated separately; this is the ScePthread handle. */
     uint64_t *tcb;
+    size_t tls_mapping_size;
     uint64_t dtv[9]; /* FreeBSD DTV: generation, static-segment count, then module slots 1..7. */
     unsigned char *tls_block;
     void *stack_memory;
@@ -108,15 +109,9 @@ static void set_gs(void *base) {
 }
 #endif
 static unsigned char *tls_block_alloc(size_t size,uint64_t alignment) {
-    if (alignment<64) alignment=64;
-    if (alignment>4096 || (alignment&(alignment-1)) || size>SIZE_MAX-(size_t)alignment) return NULL;
-    size_t rounded=(size+(size_t)alignment-1)&~((size_t)alignment-1);
-#ifdef _WIN32
-    return _aligned_malloc(rounded,(size_t)alignment);
-#else
-    void *block=NULL;
-    return posix_memalign(&block,(size_t)alignment,rounded) ? NULL : block;
-#endif
+    /* Guest TLS/TCB pointers can escape into game structures: keep them in PS4's low VA range. */
+    if (alignment>4096 || (alignment && (alignment&(alignment-1)))) return NULL;
+    return runtime_low_map(size,3);
 }
 /* Build TCB/static TLS for the calling host thread and point GS at it. */
 static void attach(GuestThread *t) {
@@ -134,13 +129,14 @@ static void attach(GuestThread *t) {
     tcb[0]=(uint64_t)(uintptr_t)tcb;         /* tcb_self */
     tcb[1]=(uint64_t)(uintptr_t)t->dtv;      /* tcb_dtv (per guest thread) */
     tcb[2]=(uint64_t)(uintptr_t)t;           /* tcb_thread */
-    t->tls_block=block; t->tcb=tcb;
+    t->tls_block=block; t->tls_mapping_size=total; t->tcb=tcb;
     set_gs(tcb);
     current=t;
 }
 static GuestThread *new_thread(void) {
-    GuestThread *t=calloc(1,sizeof(*t));
+    GuestThread *t=runtime_low_map(sizeof(*t),3);
     if (!t) return NULL;
+    memset(t,0,sizeof(*t));
     t->attr=(ThreadAttr){.magic=ATTR_MAGIC,.policy=1,.prio=DEFAULT_PRIO,.stack=DEFAULT_STACK,.affinity=0x7f};
     return t;
 }
@@ -181,12 +177,9 @@ void runtime_thread_detach_guest(void) {
     GuestThread *t=current;
     if (!t || t->host_main || !t->tls_block) return;
     set_gs(NULL);
-#ifdef _WIN32
-    _aligned_free(t->tls_block);
-#else
-    free(t->tls_block);
-#endif
+    runtime_low_unmap(t->tls_block,t->tls_mapping_size);
     t->tls_block=NULL;
+    t->tls_mapping_size=0;
     t->tcb=NULL;
     current=NULL;
 }
@@ -204,11 +197,7 @@ static GuestThread *find_thread(void *handle) {
 }
 static void release_stack(GuestThread *t) {
     if (!t || !t->stack_memory) return;
-#ifdef _WIN32
-    VirtualFree(t->stack_memory,0,MEM_RELEASE);
-#else
-    munmap(t->stack_memory,t->stack_mapping_size);
-#endif
+    runtime_low_unmap(t->stack_memory,t->stack_mapping_size);
     t->stack_memory=NULL;
     t->stack_mapping_size=0;
 }
@@ -246,8 +235,9 @@ int32_t *runtime_errno(void) { return &guest_errno; }
 
 static ABI int32_t attr_init(ThreadAttr **out) {
     if (!out) return ERR(22);
-    ThreadAttr *a=calloc(1,sizeof(*a));
+    ThreadAttr *a=runtime_low_map(sizeof(*a),3);
     if (!a) return ERR(12);
+    memset(a,0,sizeof(*a));
     *a=(ThreadAttr){.magic=ATTR_MAGIC,.policy=1,.prio=DEFAULT_PRIO,.inherit=4,.stack=DEFAULT_STACK,.guard=4096,.affinity=0x7f};
     pthread_mutex_lock(&lock); a->next=attributes; attributes=a; pthread_mutex_unlock(&lock);
     *out=a; return 0;
@@ -260,7 +250,7 @@ static ABI int32_t attr_destroy(ThreadAttr **slot) {
     while (*link!=a) link=&(*link)->next;
     *link=a->next; a->magic=0;
     pthread_mutex_unlock(&lock);
-    free(a); *slot=NULL; return 0;
+    runtime_low_unmap(a,sizeof(*a)); *slot=NULL; return 0;
 }
 static ABI int32_t attr_get(void *thread,ThreadAttr **out) {
     ThreadAttr *a=find_attr(out);
@@ -377,18 +367,18 @@ static int32_t create(GuestThread **out,ThreadAttr **attr_slot,GuestEntry entry,
     snprintf(t->name,sizeof(t->name),"%s",name ? name : "guest");
     pthread_attr_t host;
     int attr_error=pthread_attr_init(&host);
-    if (attr_error) { free(t); return thread_error(attr_error); }
+    if (attr_error) { runtime_low_unmap(t,sizeof(*t)); return thread_error(attr_error); }
     uint64_t stack=t->attr.stack<MIN_STACK ? MIN_STACK : t->attr.stack;
     /* Stacks below 1 TiB as on PS4; guest code may pack stack addresses. */
     if (stack>SIZE_MAX-STACK_MARGIN-16383u) {
-        pthread_attr_destroy(&host); free(t); return ERR(12);
+        pthread_attr_destroy(&host); runtime_low_unmap(t,sizeof(*t)); return ERR(12);
     }
     size_t stack_bytes=((size_t)stack+STACK_MARGIN+16383u)&~(size_t)16383u;
 #ifdef _WIN32
     /* Windows places the stack itself (low: no high-entropy ASLR) and commits all of it:
      * guest code has no stack probes and would step over the guard page. */
     int stack_error=pthread_attr_setstacksize(&host,stack_bytes);
-    if (stack_error) { pthread_attr_destroy(&host); free(t); return thread_error(stack_error); }
+    if (stack_error) { pthread_attr_destroy(&host); runtime_low_unmap(t,sizeof(*t)); return thread_error(stack_error); }
 #else
     void *stack_memory=runtime_low_map(stack_bytes,PROT_READ|PROT_WRITE);
     if (!stack_memory) { pthread_attr_destroy(&host); free(t); return ERR(12); }
@@ -415,7 +405,7 @@ static int32_t create(GuestThread **out,ThreadAttr **attr_slot,GuestEntry entry,
         pthread_mutex_unlock(&lock);
         release_stack(t);
         *out=NULL;
-        free(t);
+        runtime_low_unmap(t,sizeof(*t));
         return thread_error(e);
     }
     pthread_mutex_lock(&lock); ++created; pthread_mutex_unlock(&lock);
