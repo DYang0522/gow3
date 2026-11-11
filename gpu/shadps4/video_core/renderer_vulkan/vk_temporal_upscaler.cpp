@@ -1366,8 +1366,8 @@ bool HudlessWanted() {
     return wanted;
 }
 bool Rgba8(vk::Format format) {
-    return format == vk::Format::eR8G8B8A8Unorm || format == vk::Format::eR8G8B8A8Srgb ||
-           format == vk::Format::eB8G8R8A8Unorm || format == vk::Format::eB8G8R8A8Srgb;
+    // The FSR 3.1 bridge is configured for RGBA8 UNORM; do not feed it BGRA or sRGB storage.
+    return format == vk::Format::eR8G8B8A8Unorm;
 }
 } // namespace
 

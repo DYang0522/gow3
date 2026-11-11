@@ -1191,10 +1191,27 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         return;
     }
 
-    free_frame();
     if (!is_reusing_frame && is_game_frame) {
+        auto& settings = BbSettings::Get();
+        static auto last_game_frame = std::chrono::steady_clock::time_point{};
+        const auto now = std::chrono::steady_clock::now();
+        if (last_game_frame != std::chrono::steady_clock::time_point{}) {
+            const float elapsed_ms =
+                std::chrono::duration<float, std::milli>(now - last_game_frame).count();
+            if (elapsed_ms > 1.0f && elapsed_ms < 2000.0f) {
+                const float fps = 1000.0f / elapsed_ms;
+                const float previous = settings.game_fps.load(std::memory_order_relaxed);
+                settings.game_fps.store(previous > 0.0f ? previous + (fps - previous) * 0.2f : fps,
+                                        std::memory_order_relaxed);
+            } else {
+                settings.game_fps.store(0.0f, std::memory_order_relaxed);
+            }
+        }
+        last_game_frame = now;
+        settings.frame_gen_now.store(int(generated_shown), std::memory_order_relaxed);
         DebugState.IncFlipFrameNum();
     }
+    free_frame();
 }
 #else
 void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame) {

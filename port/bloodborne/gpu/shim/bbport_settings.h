@@ -147,25 +147,16 @@ struct Values {
     /// Frame generation and the frames per game frame (2x with FSR 3.1, up to 4x with DLSS on
     /// RTX 50). dlssg_max_multiplier: 1 without DLSS Frame Generation.
     std::atomic<int> frame_gen{FrameGenOff};
-    std::atomic<bool> frame_gen_fit_display{false};
-    std::atomic<bool> frame_gen_hdr{false};
     std::atomic<const char*> frame_gen_problem{nullptr};
-    /// Generated frames per game frame the display has room for now (0: paused), and its
-    /// refresh rate (the presenter's measure, for the menu).
+    /// Generated frames actually presented for the latest game frame.
     std::atomic<int> frame_gen_now{0};
-    std::atomic<int> frame_gen_display_hz{0};
-    /// The game's own frame rate (presenter, game frames only), shown beside the total when
-    /// frame generation adds frames.
+    /// The game's own presentation rate, before generated frames.
     std::atomic<float> game_fps{0.0f};
     /// The time from the game starting a frame to its present, smoothed (vk_low_latency.cpp),
     /// and the low latency mode: 0 off, 1 Reflex, 2 Reflex + Boost, 3 Anti-Lag 2,
     /// 4 pacing only.
     std::atomic<float> latency_ms{0.0f};
     std::atomic<int> latency_mode{0};
-    /// The game's frame rate cap frame generation needs (VideoOut applies it), 0 for none: with
-    /// FIFO presentation (V-Sync; AMD has no Mailbox) at most refresh / (generated + 1), or each
-    /// extra frame waits for the display and generation pauses.
-    std::atomic<int> frame_gen_flip_limit{0};
     /// Why this GPU runs without object motion vectors whatever the setting says (vk_object_motion.cpp:
     /// RX 6000 and older, under 6 GB of VRAM), nullptr when the setting decides.
     std::atomic<const char*> object_motion_unavailable{nullptr};

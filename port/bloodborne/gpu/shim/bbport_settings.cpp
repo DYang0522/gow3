@@ -62,8 +62,6 @@ void Set(Values& v, const std::string& key, const std::string& value) {
                 v.frame_gen = g;
             }
         }
-    } else if (key == "frame_gen_fit_display") {
-        v.frame_gen_fit_display = i != 0;
     } else if (key == "preset") {
         v.preset = std::clamp(i, 0, PresetCount - 1);
     } else if (key == "sharpen") {
@@ -179,7 +177,6 @@ void Load() {
         {"BB_REACTIVE_THRESHOLD", "reactive_threshold"}, {"BB_REACTIVE_MAX", "reactive_max"},
         {"BB_UPSCALE_PRESET", "preset"},            {"BB_OBJECT_MOTION", "object_motion"},
         {"BB_FRAME_GEN", "frame_gen"},
-        {"BB_FRAME_GEN_FIT_DISPLAY", "frame_gen_fit_display"},
         {"BB_VSYNC", "vsync"},
     };
     for (const auto& [env, key] : env_keys) {
@@ -308,8 +305,7 @@ void Save() {
     for (int e = 0; e < EffectCount; ++e) {
         std::fprintf(file, "%s=%d\n", Effects[e].key, int(v.effects[e].load()));
     }
-    std::fprintf(file, "frame_gen=%s\nframe_gen_fit_display=%d\n",
-                 FrameGenName(v.frame_gen), int(v.frame_gen_fit_display.load()));
+    std::fprintf(file, "frame_gen=%s\n", FrameGenName(v.frame_gen));
     std::fprintf(file, "model_lod=%d\noutput_res=%dx%d\n", v.model_lod.load(),
                  OutputWidths[v.output_res], OutputHeights[v.output_res]);
     std::fprintf(file, "mute_unfocused=%d\n", int(v.mute_unfocused.load()));
