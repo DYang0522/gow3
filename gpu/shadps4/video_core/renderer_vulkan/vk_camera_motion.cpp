@@ -57,9 +57,8 @@ CameraMotion::CameraMotion(const Instance& instance_, Scheduler& scheduler_,
 #ifdef BB_PORT_BUILD
     const char* debug = std::getenv("BB_DEBUG_MOTION");
     debug_overlay = debug && debug[0] == '1';
-    const char* upscaler = std::getenv("BB_UPSCALER");
-    const bool upscale_tracking = !(upscaler && std::strcmp(upscaler, "none") == 0);
-    for_upscaler = upscale_tracking || BbSettings::Get().frame_gen == BbSettings::FrameGenFsr3;
+    // Both the temporal upscaler and frame generation may be enabled from the menu.
+    for_upscaler = true;
 #else
     const char* env = std::getenv("SPARTAN_DEBUG_MOTION");
     debug_overlay = env && env[0] == '1';

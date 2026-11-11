@@ -406,15 +406,6 @@ void FrameGenerator::ComposeUi(vk::CommandBuffer cmdbuf, vk::ImageView color,
 
 void FrameGenerator::DumpIfRequested(vk::CommandBuffer cmdbuf, vk::Image image, u32 w, u32 h,
                                      const char* name) {
-    if (DumpRequested()) {
-        DumpInput(instance, scheduler, cmdbuf, image, w, h, name);
-    }
-}
-
-
-
-void FrameGenerator::DumpIfRequested(vk::CommandBuffer cmdbuf, vk::Image image, u32 w, u32 h,
-                                     const char* name) {
     if (DumpRequested()) DumpInput(instance, scheduler, cmdbuf, image, w, h, name);
 }
 
@@ -454,10 +445,13 @@ u32 FrameGenerator::Generate(vk::CommandBuffer& cmdbuf, vk::Image color, vk::Ima
         .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
     };
     cmdbuf.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &color_ready});
+    vk::ImageUsageFlags input_usage = color_usage;
     if (with_hudless) {
         auto barrier = color_ready;
         barrier.image = hudless;
+        barrier.oldLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
         cmdbuf.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier});
+        input_usage = vk::ImageUsageFlagBits::eSampled;
     }
     const auto& output = outputs.front();
     const vk::ImageMemoryBarrier2 to_write{
@@ -472,7 +466,7 @@ u32 FrameGenerator::Generate(vk::CommandBuffer& cmdbuf, vk::Image color, vk::Ima
     };
     cmdbuf.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pMemoryBarriers = &to_write});
     const u32 generated = GenerateFsr3(cmdbuf, with_hudless ? hudless : color,
-                                      color_usage, width, height, output, frame_ms);
+                                      input_usage, width, height, output, frame_ms);
     if (generated && with_hudless) ComposeUi(cmdbuf, color_view, hudless_view, output, width, height);
     if (generated) {
         reset = false;

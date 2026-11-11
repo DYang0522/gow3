@@ -559,10 +559,6 @@ void Menu() {
         ImGui::EndCombo();
     }
     Hint("FSR 3.1 creates one interpolated frame between game frames. It uses scene depth and motion vectors; menus and movies are not generated. Best results need V-Sync and a display near twice the game's frame rate.");
-    Checkbox("Fit to display refresh", s.frame_gen_fit_display);
-    if (s.frame_gen == BbSettings::FrameGenFsr3 && s.frame_gen_display_hz > 0) {
-        ImGui::TextDisabled("Display refresh: %d Hz", s.frame_gen_display_hz.load());
-    }
     if (const char* problem = s.frame_gen_problem.load()) {
         ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "%s", problem);
     }
