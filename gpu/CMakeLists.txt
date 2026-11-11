@@ -203,6 +203,7 @@ set(BB_VIDEO_CORE_SOURCES ${VIDEO_CORE})
 # The Bloodborne presenter uses its own temporal pipeline; the GOW3 FSR1/RCAS presenter pass
 # is not part of this runtime.
 list(FILTER BB_VIDEO_CORE_SOURCES EXCLUDE REGEX "host_passes/fsr_pass\\.cpp$")
+list(FILTER BB_VIDEO_CORE_SOURCES EXCLUDE REGEX "/fsr411/")
 file(GLOB_RECURSE BB_PORT_SHIM_SOURCES CONFIGURE_DEPENDS
     "${BB_PORT_DIR}/gpu/shim/*.cpp")
 add_library(bbgpu ${SPARTANGPU_KIND} ${BB_VIDEO_CORE_SOURCES} ${RECOMPILER} ${COMMON}
