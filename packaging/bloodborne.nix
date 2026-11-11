@@ -22,10 +22,15 @@ let
         || lib.any (dir: rel == dir || lib.hasPrefix (dir + "/") rel) assetDirs
         || lib.any (file: lib.hasPrefix (rel + "/") file) wanted;
   };
-  python = pkgs.python3.withPackages (ps: [ ps.pygobject3 ]);
-  startPython = pkgs.python3.withPackages (ps: [ ps.pillow ]);
-  icds = lib.concatMapStringsSep ":" (name: "${pkgs.mesa}/share/vulkan/icd.d/${name}")
-    [ "radeon_icd.x86_64.json" "intel_icd.x86_64.json" ];
+  python = pkgs.python3.withPackages (ps: [ ps.pygobject3 ps.pillow ]);
+  # This AppImage targets the user's GCN R9 290X: bundle RADV and RadeonSI only,
+  # not every Mesa Vulkan/Gallium driver (Intel, Nouveau, Lavapipe, etc.).
+  mesa = pkgs.mesa.override {
+    galliumDrivers = [ "radeonsi" ];
+    vulkanDrivers = [ "amd" ];
+    vulkanLayers = [ ];
+  };
+  icds = "${mesa}/share/vulkan/icd.d/radeon_icd.x86_64.json";
   fontsConf = pkgs.writeText "bbport-fonts.conf" ''
     <?xml version="1.0"?>
     <!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">
@@ -55,7 +60,7 @@ pkgs.stdenv.mkDerivation {
   inherit src;
   nativeBuildInputs = [ pkgs.makeShellWrapper pkgs.wrapGAppsHook4 pkgs.gobject-introspection ];
   buildInputs = [ pkgs.gtk4 pkgs.libadwaita pkgs.adwaita-icon-theme pkgs.librsvg
-                  pkgs.mesa pkgs.vulkan-loader ] ++ map builtins.storePath runtimePaths;
+                  mesa pkgs.vulkan-loader ] ++ map builtins.storePath runtimePaths;
   dontBuild = true;
   dontConfigure = true;
   stripDebugList = [ "share/bbport/bin/gpu" ];
