@@ -51,7 +51,7 @@ void runtime_thread_tls_cleanup(void) {
     for (unsigned i=2;i<TLS_MODULES;++i) {
         free(tls_blocks[i]);
         tls_blocks[i]=NULL;
-        dtv[i]=0;
+        dtv[i+1]=0;
     }
     dtv[0]=1;
 }
@@ -67,7 +67,7 @@ static ABI void *guest_tls_get_addr(const uint64_t *index) {
         *block=calloc(1,(size_t)tls_modules[module].memsz);
         if (!*block) { fputs("Cannot allocate module TLS\n",stderr); exit(1); }
         memcpy(*block,tls_modules[module].data,(size_t)tls_modules[module].filesz);
-        dtv[module]=(uint64_t)(uintptr_t)*block;
+        dtv[module+1]=(uint64_t)(uintptr_t)*block;
         if (!dtv[0]) dtv[0]=1;
     }
     return *block+index[1];
