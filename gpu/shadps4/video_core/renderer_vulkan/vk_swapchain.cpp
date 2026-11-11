@@ -317,25 +317,45 @@ void Swapchain::FindPresentMode() {
 
     const auto has = [&](vk::PresentModeKHR mode) { return std::ranges::find(modes, mode) != modes.cend(); };
 #ifdef BB_PORT_BUILD
-    const std::string requested = EmulatorSettings.GetPresentMode();
-    const std::pair<const char*, vk::PresentModeKHR> choices[] = {
-        {"Mailbox", vk::PresentModeKHR::eMailbox},
-        {"Fifo", vk::PresentModeKHR::eFifo},
-        {"FifoRelaxed", vk::PresentModeKHR::eFifoRelaxed},
-        {"Immediate", vk::PresentModeKHR::eImmediate},
-    };
-    const auto choice = std::ranges::find_if(choices, [&](const auto& item) {
-        return requested == item.first;
-    });
-    const auto selected = choice == std::end(choices) ? vk::PresentModeKHR::eMailbox : choice->second;
-    if (has(selected)) {
-        present_mode = selected;
+    const auto& settings = PortSettings::Get();
+    if (!present_mode_initialized) {
+        const std::string requested = EmulatorSettings.GetPresentMode();
+        const std::pair<const char*, vk::PresentModeKHR> choices[] = {
+            {"Mailbox", vk::PresentModeKHR::eMailbox},
+            {"Fifo", vk::PresentModeKHR::eFifo},
+            {"FifoRelaxed", vk::PresentModeKHR::eFifoRelaxed},
+            {"Immediate", vk::PresentModeKHR::eImmediate},
+        };
+        const auto choice = std::ranges::find_if(choices, [&](const auto& item) {
+            return requested == item.first;
+        });
+        const auto selected = choice == std::end(choices) ? vk::PresentModeKHR::eMailbox : choice->second;
+        if (has(selected)) {
+            present_mode = selected;
+        } else {
+            LOG_WARNING(Render, "Requested present mode {} is unavailable; falling back to Fifo", requested);
+            present_mode = has(vk::PresentModeKHR::eFifo) ? vk::PresentModeKHR::eFifo
+                                                          : vk::PresentModeKHR::eImmediate;
+        }
+        // Keep the in-game VSync switch in sync with the launcher's selected mode.
+        vsync = present_mode == vk::PresentModeKHR::eFifo ||
+                present_mode == vk::PresentModeKHR::eFifoRelaxed;
+        settings.vsync.store(vsync, std::memory_order_relaxed);
+        present_mode_initialized = true;
     } else {
-        LOG_WARNING(Render, "Requested present mode {} is unavailable; falling back to Fifo", requested);
-        present_mode = has(vk::PresentModeKHR::eFifo) ? vk::PresentModeKHR::eFifo
-                                                      : vk::PresentModeKHR::eImmediate;
+        const bool requested_vsync = settings.vsync.load(std::memory_order_relaxed);
+        if (requested_vsync != vsync) {
+            if (requested_vsync) {
+                present_mode = has(vk::PresentModeKHR::eFifo) ? vk::PresentModeKHR::eFifo
+                                                              : vk::PresentModeKHR::eImmediate;
+            } else {
+                present_mode = has(vk::PresentModeKHR::eMailbox) ? vk::PresentModeKHR::eMailbox
+                               : has(vk::PresentModeKHR::eImmediate) ? vk::PresentModeKHR::eImmediate
+                                                                     : vk::PresentModeKHR::eFifo;
+            }
+        }
+        vsync = requested_vsync;
     }
-    vsync = present_mode != vk::PresentModeKHR::eImmediate;
 #else
     // VSync on is Fifo; off is Mailbox when available, else Immediate, else Fifo.
     vsync = PortSettings::Get().vsync;
