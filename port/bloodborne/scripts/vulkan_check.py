@@ -201,15 +201,21 @@ def query():
                 if vk.vkEnumerateDeviceExtensionProperties(handle, None, c.byref(number), listed) in (0, 5):
                     extensions = {e.extensionName.decode('ascii', 'replace') for e in listed[:number.value]}
             features = {}
-            if ('VK_EXT_robustness2' in extensions and
+            if ('VK_EXT_robustness2' in extensions or
                     'VK_EXT_vertex_attribute_divisor' in extensions):
-                divisor = VertexAttributeDivisorFeatures(VERTEX_DIVISOR_FEATURES, None, 0, 0)
-                robustness = Robustness2Features(ROBUSTNESS_2_FEATURES,
-                                                 c.cast(c.pointer(divisor), c.c_void_p))
-                chain = Features2(FEATURES_2, c.cast(c.pointer(robustness), c.c_void_p))
+                divisor = (VertexAttributeDivisorFeatures(VERTEX_DIVISOR_FEATURES, None, 0, 0)
+                           if 'VK_EXT_vertex_attribute_divisor' in extensions else None)
+                robustness = (Robustness2Features(
+                    ROBUSTNESS_2_FEATURES,
+                    c.cast(c.pointer(divisor), c.c_void_p) if divisor else None)
+                    if 'VK_EXT_robustness2' in extensions else None)
+                tail = robustness if robustness else divisor
+                chain = Features2(FEATURES_2, c.cast(c.pointer(tail), c.c_void_p))
                 vk.vkGetPhysicalDeviceFeatures2(handle, c.byref(chain))
-                features = {name: bool(getattr(robustness, name)) for name in REQUIRED_FEATURES}
-                features.update({name: bool(getattr(divisor, name)) for name in REQUIRED_DIVISOR_FEATURES})
+                if robustness:
+                    features.update({name: bool(getattr(robustness, name)) for name in REQUIRED_FEATURES})
+                if divisor:
+                    features.update({name: bool(getattr(divisor, name)) for name in REQUIRED_DIVISOR_FEATURES})
             devices.append({'name': name, 'api': api, 'type': device_type, 'memory': local,
                             'extensions': extensions, 'features': features, 'vendor': vendor,
                             'device_id': device_id})
