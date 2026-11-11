@@ -348,10 +348,17 @@ Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_
     SpartanOverlay::Init(instance, swapchain.GetSurfaceFormat().format, num_images);
 #endif
 
+#ifdef BB_PORT_BUILD
+    const bool binary_cache = EmulatorSettingsImpl::Flag("BB_PIPELINE_BINARIES", true) &&
+                              EmulatorSettings.IsPipelineCacheEnabled();
+    const bool capture_only = EmulatorSettingsImpl::Flag("BB_PIPELINE_BINARY_ISOLATED", false) &&
+                              EmulatorSettingsImpl::Flag("BB_PIPELINE_CAPTURE_ONLY", false);
+#else
     const bool binary_cache = EmulatorSettingsImpl::Flag("SPARTAN_PIPELINE_BINARIES", true) &&
                               EmulatorSettings.IsPipelineCacheEnabled();
     const bool capture_only = EmulatorSettingsImpl::Flag("SPARTAN_PIPELINE_BINARY_ISOLATED", false) &&
                               EmulatorSettingsImpl::Flag("SPARTAN_PIPELINE_CAPTURE_ONLY", false);
+#endif
     if (UseOnDemandPipelines(binary_cache, instance.GetPipelineBinaryGlobalKey().keySize != 0,
                             capture_only)) {
         rasterizer->GetPipelineCache().StartOnDemand();
@@ -361,7 +368,11 @@ Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_
     // spartanport: by default the cached pipelines load while the game runs (a corner note shows the
     // progress). Otherwise rebuilding them takes up to minutes before the first game frame:
     // show what is happening instead of a black window.
+#ifdef BB_PORT_BUILD
+    const char* background_warmup = std::getenv("BB_BACKGROUND_WARMUP");
+#else
     const char* background_warmup = std::getenv("SPARTAN_BACKGROUND_WARMUP");
+#endif
     if ((!background_warmup || *background_warmup != '0') &&
         rasterizer->GetPipelineCache().StartBackgroundWarmUp()) {
         return;
@@ -566,7 +577,11 @@ static void DumpRaw(const Instance& instance, Scheduler& scheduler, vk::CommandB
     cmdbuf.copyImageToBuffer(image, layout, buffer,
                              vk::BufferImageCopy{.imageSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
                                                  .imageExtent = {w, h, 1}});
+#ifdef BB_PORT_BUILD
+    const char* dir = std::getenv("BB_DUMP_DIR");
+#else
     const char* dir = std::getenv("SPARTAN_DUMP_DIR");
+#endif
     char path[512];
     std::snprintf(path, sizeof(path), "%s/%s_%03d_%ux%u.raw", dir && *dir ? dir : "out/dump", name,
                   index, w, h);
@@ -586,7 +601,11 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     // spartanport: SPARTAN_FRAME_DUMP_TRIGGER=<file>: when the file exists it is removed and this frame's
     // guest display buffer and presented image are written to SPARTAN_DUMP_DIR (default out/dump)
     // as raw 32-bit pixels (menus and movies included; the upscaler dumps scene frames only).
+#ifdef BB_PORT_BUILD
+    static const char* frame_dump_trigger = std::getenv("BB_FRAME_DUMP_TRIGGER");
+#else
     static const char* frame_dump_trigger = std::getenv("SPARTAN_FRAME_DUMP_TRIGGER");
+#endif
     static int frame_dump_index = 0;
     const bool frame_dump = frame_dump_trigger && std::remove(frame_dump_trigger) == 0;
     // spartanport: scaled upscaler presets: the output-size display buffer drawn by the port.

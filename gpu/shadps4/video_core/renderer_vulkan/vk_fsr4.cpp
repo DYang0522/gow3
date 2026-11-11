@@ -130,7 +130,11 @@ struct Fsr4Upscaler::Impl {
         std::vector<u8> initializer, weights;
         // spartanport: tools/fsr4_optimize.sh puts fixed or faster passes into opt/ (post through
         // shared memory, pass 11 without out-of-bounds writes); SPARTAN_FSR4_OPT=0 keeps the originals.
+#ifdef BB_PORT_BUILD
+        const char* opt_env = std::getenv("BB_FSR4_OPT");
+#else
         const char* opt_env = std::getenv("SPARTAN_FSR4_OPT");
+#endif
         const bool use_opt = !(opt_env && opt_env[0] == '0');
         u32 optimized = 0;
         const auto load = [&](const char* name, std::vector<u8>& data) {

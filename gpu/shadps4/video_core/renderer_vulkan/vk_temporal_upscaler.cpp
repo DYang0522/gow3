@@ -1975,9 +1975,17 @@ bool TemporalUpscaler::DisplayOverride(VAddr address, Display& display) {
     display = {vk::Image(it->second.image), it->second.format, it->second.width, it->second.height};
     // Diagnostic capture of the actual completed display buffer, including native UI.
     // SPARTAN_PRESENT_DUMP_COUNT=N: the trigger dumps N consecutive frames (temporal stability).
+#ifdef BB_PORT_BUILD
+    static const char* dump = std::getenv("BB_PRESENT_DUMP_TRIGGER");
+#else
     static const char* dump = std::getenv("SPARTAN_PRESENT_DUMP_TRIGGER");
+#endif
     static const int dump_count = [] {
+#ifdef BB_PORT_BUILD
+        const char* env = std::getenv("BB_PRESENT_DUMP_COUNT");
+#else
         const char* env = std::getenv("SPARTAN_PRESENT_DUMP_COUNT");
+#endif
         return env ? std::max(1, std::atoi(env)) : 1;
     }();
     static int dump_index = 0;

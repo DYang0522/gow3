@@ -381,7 +381,11 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
                                       instance.GetDriverID() == vk::DriverId::eNvidiaProprietary,
         // spartanport: older NVIDIA (Pascal) has no barycentrics; SPARTAN_INTERP_INT_FIX=0/1 overrides.
         .needs_integer_interpolation_fix = [&] {
+#ifdef BB_PORT_BUILD
+            if (const char* env = std::getenv("BB_INTERP_INT_FIX")) {
+#else
             if (const char* env = std::getenv("SPARTAN_INTERP_INT_FIX")) {
+#endif
                 return env[0] == '1';
             }
             return !instance.IsFragmentShaderBarycentricSupported() &&
@@ -939,7 +943,11 @@ bool PipelineCache::RefreshGraphicsKey(PipelineSelection& sel) {
         // SPARTAN_MOTION_SELECT_LOG=1: each G-buffer vertex shader once, with its buffer sizes
         // and the selection, to find animated models that the size rule leaves out.
         static const bool select_log = [] {
+#ifdef BB_PORT_BUILD
+            const char* value = std::getenv("BB_MOTION_SELECT_LOG");
+#else
             const char* value = std::getenv("SPARTAN_MOTION_SELECT_LOG");
+#endif
             return value && value[0] == '1';
         }();
         if (select_log && vs) {
@@ -960,7 +968,11 @@ bool PipelineCache::RefreshGraphicsKey(PipelineSelection& sel) {
         }
         // Keep the old broad path available for visual A/B tests.
         static const bool all_motion = [] {
+#ifdef BB_PORT_BUILD
+            const char* value = std::getenv("BB_OBJECT_MOTION_ALL");
+#else
             const char* value = std::getenv("SPARTAN_OBJECT_MOTION_ALL");
+#endif
             return value && value[0] == '1';
         }();
         if (all_motion) {
