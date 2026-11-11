@@ -6,7 +6,13 @@
 #include <cstring>
 
 #include <vk_mem_alloc.h>
+#ifdef BB_PORT_BUILD
+#include "bbport_settings.h"
+namespace PortSettings = BbSettings;
+#else
 #include "spartanport_settings.h"
+namespace PortSettings = SpartanSettings;
+#endif
 #include "spartanport_toggles.h"
 #include "shader_recompiler/runtime_info.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -53,9 +59,13 @@ ObjectMotion::ObjectMotion(const Instance& instance_, Scheduler& scheduler_)
     : instance{instance_}, scheduler{scheduler_} {
     // Pipeline selection limits the extra attachment and vertex stores to likely
     // animated draws. A setting or environment override can still disable the path.
-    if (!SpartanSettings::Get().object_motion ||
-        SpartanSettings::Get().upscaler == SpartanSettings::UpscalerOff) {
+    if (!PortSettings::Get().object_motion ||
+        PortSettings::Get().upscaler == PortSettings::UpscalerOff) {
+#ifdef BB_PORT_BUILD
+        std::puts("Object motion: off (enable in PC Settings)");
+#else
         std::puts("Object motion: off (enable in menu or SPARTAN_OBJECT_MOTION=1)");
+#endif
         return;
     }
     const auto& features = instance.GetPhysicalDevice().getFeatures();
