@@ -218,25 +218,22 @@ def query():
             if queue_count.value:
                 vk.vkGetPhysicalDeviceQueueFamilyProperties(handle, c.byref(queue_count), queue_props)
             sparse_queue = any(q.queueCount and q.queueFlags & 0x8 for q in queue_props[:queue_count.value])
-            features = {}
-            if ('VK_EXT_robustness2' in extensions or
-                    'VK_EXT_vertex_attribute_divisor' in extensions):
-                divisor = (VertexAttributeDivisorFeatures(VERTEX_DIVISOR_FEATURES, None, 0, 0)
-                           if 'VK_EXT_vertex_attribute_divisor' in extensions else None)
-                robustness = (Robustness2Features(
-                    ROBUSTNESS_2_FEATURES,
-                    c.cast(c.pointer(divisor), c.c_void_p) if divisor else None)
-                    if 'VK_EXT_robustness2' in extensions else None)
-                tail = robustness if robustness else divisor
-                chain = Features2(FEATURES_2, c.cast(c.pointer(tail), c.c_void_p))
-                vk.vkGetPhysicalDeviceFeatures2(handle, c.byref(chain))
-                if robustness:
-                    features.update({name: bool(getattr(robustness, name)) for name in REQUIRED_FEATURES})
-                if divisor:
-                    features.update({name: bool(getattr(divisor, name)) for name in REQUIRED_DIVISOR_FEATURES})
+            divisor = (VertexAttributeDivisorFeatures(VERTEX_DIVISOR_FEATURES, None, 0, 0)
+                       if 'VK_EXT_vertex_attribute_divisor' in extensions else None)
+            robustness = (Robustness2Features(
+                ROBUSTNESS_2_FEATURES,
+                c.cast(c.pointer(divisor), c.c_void_p) if divisor else None)
+                if 'VK_EXT_robustness2' in extensions else None)
+            tail = robustness if robustness else divisor
+            chain = Features2(FEATURES_2, c.cast(c.pointer(tail), c.c_void_p) if tail else None)
+            vk.vkGetPhysicalDeviceFeatures2(handle, c.byref(chain))
             # VkPhysicalDeviceFeatures fields 44 and 45 are sparseBinding and sparseResidencyBuffer.
-            features['sparseBinding'] = bool(chain.features[44]) if 'chain' in locals() else False
-            features['sparseResidencyBuffer'] = bool(chain.features[45]) if 'chain' in locals() else False
+            features = {'sparseBinding': bool(chain.features[44]),
+                        'sparseResidencyBuffer': bool(chain.features[45])}
+            if robustness:
+                features.update({name: bool(getattr(robustness, name)) for name in REQUIRED_FEATURES})
+            if divisor:
+                features.update({name: bool(getattr(divisor, name)) for name in REQUIRED_DIVISOR_FEATURES})
             devices.append({'name': name, 'api': api, 'type': device_type, 'memory': local,
                             'extensions': extensions, 'features': features, 'sparse_queue': sparse_queue,
                             'vendor': vendor, 'device_id': device_id})
