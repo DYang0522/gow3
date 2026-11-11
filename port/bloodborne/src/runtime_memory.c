@@ -341,7 +341,12 @@ static int pool(void) {
     }
     if (!section) { fprintf(stderr,"Runtime: cannot create %" PRIu64 " MiB of guest memory (error %lu); is the page file large enough?\n",bytes>>20,GetLastError()); return -1; }
     backing_base=MapViewOfFile3(section,GetCurrentProcess(),NULL,0,bytes,0,PAGE_READWRITE,NULL,0);
-    return backing_base ? 0 : -1;
+    if (!backing_base) {
+        CloseHandle(section);
+        section=NULL;
+        return -1;
+    }
+    return 0;
 }
 #else
 /* Direct memory occupies [0,POOL_SIZE) of the memfd, flexible memory [POOL_SIZE,+FLEX_SPAN). */
