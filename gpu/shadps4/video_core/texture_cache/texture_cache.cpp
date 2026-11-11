@@ -6,7 +6,9 @@
 #include "video_core/amdgpu/liverpool.h"
 
 #include "spartanport_toggles.h"
+#ifndef BB_PORT_BUILD
 #include "spartanport_settings.h"
+#endif
 #include "common/assert.h"
 #include "common/debug.h"
 #include "common/div_ceil.h"
@@ -50,6 +52,15 @@ bool StaleReadbacksEnabled() {
 #else
     const char* value = std::getenv("SPARTAN_STALE_READBACK");
     return value && value[0] == '1';
+#endif
+}
+
+bool KeepRecentlyUsedTextures() {
+#ifdef BB_PORT_BUILD
+    // This build has no GOW3 settings object; keep the low-VRAM safeguard enabled.
+    return true;
+#else
+    return SpartanSettings::Get().gc_by_time.load();
 #endif
 }
 
@@ -1801,7 +1812,7 @@ void TextureCache::GarbageCollectImages() {
         // memory (suspected for hitches in fights and for broken effect textures, flames/tornado).
         // On GPUs under 4 GB an image also has to be idle for 5 s (trigger), 2 s (pressure) or
         // 1 s (critical). In-game menu: Performance > "Keep recently used textures" (gc_by_time).
-        if (small_vram && SpartanSettings::Get().gc_by_time.load() && gc_ticks_per_second > 0.0) {
+        if (small_vram && KeepRecentlyUsedTextures() && gc_ticks_per_second > 0.0) {
             const double seconds = aggresive ? 1.0 : pressured ? 2.0 : 5.0;
             ticks_to_destroy = std::max(ticks_to_destroy, u64(gc_ticks_per_second * seconds));
         }
@@ -1839,7 +1850,7 @@ void TextureCache::GarbageCollectImages() {
         // dozens of full GPU stalls a second, plus rebuilds of render targets it uses again soon.
         // Below the critical mark only images with nothing to write back are evicted, and a kept
         // one does not use up this run's deletions. "Keep recently used textures" (gc_by_time).
-        if (download && !aggresive && small_vram && SpartanSettings::Get().gc_by_time.load()) {
+        if (download && !aggresive && small_vram && KeepRecentlyUsedTextures()) {
             ++num_deletions;
             return false;
         }
@@ -1847,7 +1858,7 @@ void TextureCache::GarbageCollectImages() {
         // registered (its pages stay protected) until the copy is done; FinishPendingEvictions
         // then writes it back and frees it, or keeps it if the game used or wrote it meanwhile.
         // No GPU wait. Up to 64 MiB in flight, beyond that the synchronous path below.
-        if (download && small_vram && SpartanSettings::Get().gc_by_time.load()) {
+        if (download && small_vram && KeepRecentlyUsedTextures()) {
             for (const auto& pending : pending_evictions) {
                 if (pending.image_id == image_id) {
                     ++num_deletions;
