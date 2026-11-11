@@ -696,11 +696,18 @@ static int32_t unmap_locked(uintptr_t start, uint64_t size) {
     return 0;
 }
 static ABI int32_t direct_unmap(void *address, uint64_t size) {
+    const uintptr_t start=(uintptr_t)address;
+    /* Validate before notifying the GPU: align_up(size) must not wrap and a bad
+       guest pointer must never be forwarded to the renderer's unmap callback. */
+    if (start%PAGE || !size || start<USER_MIN || start>=USER_MAX || size>USER_MAX-start)
+        return INVALID;
+    const uint64_t rounded=align_up(size,PAGE);
+    if (rounded<size) return INVALID;
     /* The GPU forgets the range before it disappears (as shadPS4's early GPU unmap). */
-    if (hook_unmap && !((uintptr_t)address%PAGE) && size) hook_unmap((uintptr_t)address,align_up(size,PAGE));
+    if (hook_unmap) hook_unmap(start,rounded);
     write_lock();
     size_t before=pending_count;
-    int32_t result=unmap_locked((uintptr_t)address,size);
+    int32_t result=unmap_locked(start,size);
     pending_count=before; /* already notified above */
     write_unlock();
     return result;
