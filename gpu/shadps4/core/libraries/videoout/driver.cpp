@@ -714,8 +714,10 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
     // at half the limit; go back once queued frames wait long enough that the full rate would fit
     // (the game finishes them early) for 3 s. Only for limits of 50+; SPARTAN_ADAPTIVE_HALF=0 turns it off.
     bool half_rate = false;
+#ifndef BB_PORT_BUILD
     double ema_interval_ms = 0.0, ema_wait_ms = 0.0, over_ms = 0.0, room_ms = 0.0;
     std::chrono::steady_clock::time_point last_present{};
+#endif
     // fp32-gcn1: even pacing (see the vblank pacing comment below): refreshes per frame, 0 = off.
     u32 even = 0;
     const auto apply_period = [&] {
@@ -787,8 +789,8 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
     // With VSync on (Fifo) and a cap that divides the refresh rate (30 on 60 Hz, 60 on 120 Hz),
     // the same switch uses even pacing instead: every frame presented for a whole number of
     // refreshes (vk_presenter.cpp). It cannot drift, and needs no report from the screen.
-    const auto update_even = [&] {
 #ifndef BB_PORT_BUILD
+    const auto update_even = [&] {
         u32 want = 0;
         const u32 effective = half_rate && frame_limit ? frame_limit / 2 : frame_limit;
         const int mhz = SpartanGraphics::display_refresh_mhz.load();
@@ -812,8 +814,8 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
                 std::printf("VideoOut: even pacing off\n");
             }
         }
-#endif
     };
+#endif
     const auto swap_free = [&] {
         if (even < 2 || !separate_swap) {
             return true;
@@ -821,8 +823,8 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
         std::scoped_lock lock{swap_mutex};
         return !swap_busy && swap_queue.empty();
     };
-    const auto update_pacing = [&] {
 #ifndef BB_PORT_BUILD
+    const auto update_pacing = [&] {
         update_even();
         // The effective period counts, so the adaptive half rate (60 -> 30) is paced as well.
         const bool want = SpartanSettings::Get().vblank_pacing.load() && frame_limit != 0 &&
@@ -833,8 +835,10 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
             paced = now_paced;
             std::printf("VideoOut: vblank pacing %s\n", paced ? "on" : "off");
         }
-#endif
     };
+#else
+    const auto update_pacing = [] {};
+#endif
     // Moves next_flip to the refresh the last flipped frame reached; false while that frame is
     // still on its way to the screen. Never later than one period after the last flip: on an
     // R7 350 with Mailbox under XFCE the reports came late and a 30 cap ran at 20 FPS, so a late
@@ -879,7 +883,9 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
         if (const u32 limit = current_limit(); limit != frame_limit) {
             frame_limit = limit;
             half_rate = false;
+#ifndef BB_PORT_BUILD
             over_ms = room_ms = 0.0;
+#endif
             apply_period();
             immediate_flips = limit != 0;
             next_flip = std::chrono::steady_clock::now();
