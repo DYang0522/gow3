@@ -101,7 +101,9 @@ static void scan_labels(const char *folder,char labels[][LABEL_SIZE],uint32_t *c
  * at most capacity entries are written. Never touch unused list slots. */
 static ABI int32_t addon_list(uint32_t service,void *list,uint32_t capacity,uint32_t *hits) {
     require_initialized();
-    if (service) { fputs("STOP: nonzero AppContent service label unsupported\n",stderr); exit(21); }
+    // Only the base-game entitlement service is emulated. An unknown service label is an
+    // ordinary AppContent parameter error, not a reason to terminate the process.
+    if (service) return PARAMETER;
     if ((!capacity || !list) && !hits) return PARAMETER;
     static char labels[MAX_ADDONS][LABEL_SIZE];
     uint32_t found=0;

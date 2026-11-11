@@ -228,10 +228,9 @@ static ABI int32_t guest_sysctl(const int32_t *name,uint32_t namelen,void *old,u
         if (old) { if (*oldlen<4) return fail_posix(ENOMEM); memcpy(old,&value,4); }
         *oldlen=4; return 0;
     }
-    fprintf(stderr,"STOP: unsupported sysctl mib");
-    for (uint32_t i=0;i<namelen && i<8;++i) fprintf(stderr," %d",name[i]);
-    fputc('\n',stderr);
-    exit(21);
+    // sysctl probes commonly try optional kernel MIBs. FreeBSD reports an unknown MIB as ENOENT;
+    // keep that failure local to the query instead of terminating the game.
+    return fail_posix(ENOENT);
 }
 
 /* ---- pthread_once and thread-specific data ---- */

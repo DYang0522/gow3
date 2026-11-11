@@ -49,7 +49,9 @@ static uint64_t now_ns(void) {
 static ABI int32_t sem_create(uint32_t *out,const char *name,uint32_t attr,
                               int32_t initial,int32_t maximum,const void *options) {
     if (!out || !name || attr>2 || initial<0 || maximum<=0 || initial>maximum) return ERR(22);
-    if (options) { fputs("STOP: semaphore options are not implemented\n",stderr); exit(21); }
+    // The FIFO host implementation has no PS4-specific option block. Report invalid options to
+    // the caller without terminating the game.
+    if (options) return ERR(22);
     Sema *s=calloc(1,sizeof(*s));
     if (!s) return ERR(12);
     pthread_mutex_lock(&lock);

@@ -149,7 +149,9 @@ static int take_until(Rwlock *r, int writer, const struct timespec *deadline) {
 static ABI int32_t rw_init(Rwlock **out, void *const *attr, const char *name) {
     (void)name;
     if (!out || (attr && !*attr)) return error(EINVAL);
-    if (attr) { fputs("STOP: non-default PS4 rwlock attributes are not implemented\n",stderr); exit(21); }
+    // Default attributes are sufficient for the game. Reject an unsupported attr handle using
+    // the pthread API's normal error path instead of aborting the game process.
+    if (attr) return error(EINVAL);
     pthread_mutex_lock(&pool_lock);
     /* POSIX allows uninitialized storage, so never read *out during init. */
     Rwlock *r=NULL;

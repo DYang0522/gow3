@@ -2,7 +2,7 @@
  * builder functions are imports, but games may also build chunks inline), and
  * run synchronously at submission: decoding a batch takes well under a
  * millisecond, so waiting always finds it complete. ATRAC9 is decoded by
- * LibAtrac9 (MIT, third_party/LibAtrac9). MP3/AAC instances stop explicitly. */
+ * LibAtrac9 (MIT, third_party/LibAtrac9). Unsupported MP3/AAC instances return a codec error. */
 #define _GNU_SOURCE
 #include "runtime.h"
 #include <stdio.h>
@@ -407,7 +407,9 @@ static ABI int32_t ajm_module_unregister(uint32_t id, uint32_t codec) {
 static ABI int32_t ajm_instance_create(uint32_t id, uint32_t codec, uint64_t flags, uint32_t *out) {
     if (!out || codec>=24) return ERR_INVALID_PARAMETER;
     if (!(flags & 7)) return ERR_WRONG_REVISION;
-    if (codec!=1) { fprintf(stderr,"STOP: Ajm codec %u (0=MP3, 2=AAC) is not implemented\n",codec); exit(21); }
+    // ATRAC9 is the codec used by the port. Do not terminate the whole game if an optional
+    // MP3/AAC stream is requested; let libSceAjm report an unsupported codec to its caller.
+    if (codec!=1) return ERR_INVALID_PARAMETER;
     if (ajm_trace()) printf("Audio trace: Ajm instance create codec %u flags %#llx\n",codec,(unsigned long long)flags);
     pthread_mutex_lock(&lock);
     Context *c=context(id);
