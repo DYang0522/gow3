@@ -713,18 +713,36 @@ static ABI int32_t direct_release(uint64_t start, uint64_t size) {
     write_lock();
     if (!direct_range_allocated(start,size)) { write_unlock(); return INVALID; }
 
-    /* A release may split one allocation into left and right remnants. Reserve a
-       block-table slot for every such split before unmapping anything. */
-    size_t free_slots=0, split_slots=0;
+    /* Build the post-release allocation table first. This handles a range that
+       splits one allocation into two without depending on a spare table slot. */
+    Block updated[LIMIT]={0};
+    size_t updated_count=0;
+    uint64_t released_bytes=0;
     for (int i=0;i<LIMIT;++i) {
         const Block b=blocks[i];
-        if (!b.used) { ++free_slots; continue; }
-        if (b.start>=end || start>=b.start+b.size) continue;
+        if (!b.used) continue;
+        if (b.start>=end || start>=b.start+b.size) {
+            updated[updated_count++]=b;
+            continue;
+        }
+        const uint64_t block_end=b.start+b.size;
         const uint64_t a=b.start>start ? b.start : start;
-        const uint64_t e=b.start+b.size<end ? b.start+b.size : end;
-        if (a>b.start && e<b.start+b.size) ++split_slots;
+        const uint64_t e=block_end<end ? block_end : end;
+        if (a>b.start) {
+            if (updated_count==LIMIT) { write_unlock(); return NO_SPACE; }
+            Block left=b;
+            left.size=a-b.start;
+            updated[updated_count++]=left;
+        }
+        if (e<block_end) {
+            if (updated_count==LIMIT) { write_unlock(); return NO_SPACE; }
+            Block right=b;
+            right.start=e;
+            right.size=block_end-e;
+            updated[updated_count++]=right;
+        }
+        released_bytes+=e-a;
     }
-    if (split_slots>free_slots) { write_unlock(); return NO_SPACE; }
 
     /* Mappings of released physical pages disappear with them. */
     for (size_t i=0; i<vma_count;) {
@@ -743,25 +761,11 @@ static ABI int32_t direct_release(uint64_t start, uint64_t size) {
         }
         ++i;
     }
-    for (int i=0; i<LIMIT; ++i) {
-        Block *b=&blocks[i];
-        if (!b->used || b->start>=end || start>=b->start+b->size) continue;
-        const uint64_t a=b->start>start ? b->start : start;
-        const uint64_t e=b->start+b->size<end ? b->start+b->size : end;
-        Block left=*b, right=*b;
-        left.size=a-b->start;
-        right.start=e;
-        right.size=b->start+b->size-e;
-        b->used=0;
-        if (left.size) *b=left;
-        if (right.size) {
-            int slot=-1;
-            for (int j=0;j<LIMIT;++j) if (!blocks[j].used) { slot=j; break; }
-            if (slot<0) { fputs("ERROR: direct-memory split reservation lost\n",stderr); abort(); }
-            blocks[slot]=right;
-        }
-        live_bytes-=e-a;
-    }
+
+    memcpy(blocks,updated,updated_count*sizeof(*blocks));
+    if (updated_count<LIMIT)
+        memset(blocks+updated_count,0,(LIMIT-updated_count)*sizeof(*blocks));
+    live_bytes-=released_bytes;
     host_discard(start,size); /* zero on reuse */
     write_unlock();
     flush_hooks();
@@ -800,7 +804,7 @@ static ABI int32_t reserve_range(void **inout, uint64_t size, int flags, uint64_
     write_lock();
     if (flags & MAP_FIXED_FLAG) {
         uintptr_t start=(uintptr_t)address;
-        if (start<USER_MIN || start%PAGE || start>USER_MAX-size) {
+        if (size>USER_MAX-USER_MIN || start<USER_MIN || start%PAGE || start>USER_MAX-size) {
             write_unlock(); return INVALID;
         }
         if (overlaps(start,start+size,0)) {
