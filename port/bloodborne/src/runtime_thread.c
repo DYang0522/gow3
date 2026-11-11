@@ -24,6 +24,16 @@
 #include <asm/prctl.h>
 #endif
 #define ERR(n) ((int32_t)(UINT32_C(0x80020000)|(n)))
+static int32_t thread_error(int e) {
+    switch (e) {
+    case EAGAIN: return ERR(35);
+    case ENOMEM: return ERR(12);
+    case EINVAL: return ERR(22);
+    case ESRCH: return ERR(3);
+    case EDEADLK: return ERR(11);
+    default: return ERR(5);
+    }
+}
 #define ATTR_MAGIC UINT32_C(0x41545452)
 #define STACK_MARGIN (256*1024)
 #define MIN_STACK (64*1024)
@@ -353,7 +363,8 @@ static int32_t create(GuestThread **out,ThreadAttr **attr_slot,GuestEntry entry,
     t->entry=entry; t->argument=argument; t->detached=t->attr.detached;
     snprintf(t->name,sizeof(t->name),"%s",name ? name : "guest");
     pthread_attr_t host;
-    pthread_attr_init(&host);
+    int attr_error=pthread_attr_init(&host);
+    if (attr_error) { free(t); return thread_error(attr_error); }
     uint64_t stack=t->attr.stack<MIN_STACK ? MIN_STACK : t->attr.stack;
     /* Stacks below 1 TiB as on PS4; guest code may pack stack addresses. */
     size_t stack_bytes=(size_t)stack+STACK_MARGIN;
@@ -382,7 +393,17 @@ static int32_t create(GuestThread **out,ThreadAttr **attr_slot,GuestEntry entry,
     *out=t;
     int e=pthread_create(&t->host,&host,host_start,t);
     pthread_attr_destroy(&host);
-    if (e) { fprintf(stderr,"STOP: host pthread_create failed: %d\n",e); exit(21); }
+    if (e) {
+        pthread_mutex_lock(&lock);
+        GuestThread **link=&threads;
+        while (*link && *link!=t) link=&(*link)->next;
+        if (*link==t) *link=t->next;
+        pthread_mutex_unlock(&lock);
+        release_stack(t);
+        *out=NULL;
+        free(t);
+        return thread_error(e);
+    }
     pthread_mutex_lock(&lock); ++created; pthread_mutex_unlock(&lock);
     reap_finished_detached();
     printf("Runtime: guest thread '%s' created (stack=%llu, prio=%d)\n",t->name,(unsigned long long)stack,t->attr.prio);
@@ -404,7 +425,10 @@ static ABI int32_t thread_join(GuestThread *t,void **result) {
     pthread_mutex_unlock(&lock);
     void *value=NULL;
     int e=pthread_join(t->host,&value);
-    if (e) { fprintf(stderr,"STOP: host pthread_join failed: %d\n",e); exit(21); }
+    if (e) {
+        pthread_mutex_lock(&lock); t->joined=0; pthread_mutex_unlock(&lock);
+        return thread_error(e);
+    }
     if (result) *result=t->result;
     release_stack(t);
     pthread_mutex_lock(&lock); t->reaped=1; ++joined_count; pthread_mutex_unlock(&lock);
@@ -425,7 +449,10 @@ static ABI int32_t thread_detach(GuestThread *t) {
     /* HLE-owned host threads have no supplied stack, so detach them directly. */
     if (host_owned) {
         int e=pthread_detach(host);
-        if (e) { fprintf(stderr,"STOP: host pthread_detach failed: %d\n",e); exit(21); }
+        if (e) {
+            pthread_mutex_lock(&lock); t->detached=0; pthread_mutex_unlock(&lock);
+            return thread_error(e);
+        }
     }
     reap_finished_detached();
     return 0;
