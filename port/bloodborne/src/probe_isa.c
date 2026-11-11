@@ -721,7 +721,8 @@ int main(int argc, char **argv) {
                 uint64_t address=bindings[relocs[i].value];
                 if (binding_kinds[relocs[i].value]!=relocs[i].kind || !mapped(segments,ns,address,relocs[i].addend+1)) fail("native export kind/range mismatch");
                 uintptr_t native=(uintptr_t)image+address;
-                uintptr_t replacement=runtime_resolve_native(names[relocs[i].value],relocs[i].kind==2,native);
+                uintptr_t replacement=mapped(segments,ns,address,8)
+                    ? runtime_resolve_native(names[relocs[i].value],relocs[i].kind==2,native) : 0;
                 value=(replacement ? replacement : native)+relocs[i].addend;
             }
         }
