@@ -231,6 +231,13 @@ static ABI int32_t rw_destroy(Rwlock **handle) {
     *handle=(Rwlock *)(uintptr_t)1;
     pthread_mutex_unlock(&pool_lock); return 0;
 }
+/* Release only the per-thread bookkeeping; locks themselves remain locked if a
+ * guest thread exits while holding one, as with the host pthread contract. */
+void runtime_rwlock_thread_cleanup(void) {
+    free(held);
+    held=NULL;
+    held_count=held_size=0;
+}
 uintptr_t runtime_rwlock_resolve(const char *name) {
     if (!strcmp(name,"6ULAa0fq4jA#p#J")) return (uintptr_t)rw_init;
     if (!strcmp(name,"BB+kb08Tl9A#p#J")) return (uintptr_t)rw_destroy;
