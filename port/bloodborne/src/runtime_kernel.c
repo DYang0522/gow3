@@ -329,7 +329,7 @@ static ABI int32_t posix_key_delete(uint32_t k) { int32_t r=key_delete(k); retur
 static ABI int32_t posix_key_set(uint32_t k,void *v) { int32_t r=key_set(k,v); return r ? r&0xffff : 0; }
 
 /* Libkernel lifecycle/signal helpers not needed by this native-thread runtime. */
-static ABI void pthread_cxa_finalize(void *dso) { (void)dso; }
+static ABI void pthread_cxa_finalize(void *dso) { runtime_finalize(dso); }
 static ABI int32_t is_signal_return(const void *address) { (void)address; return 0; }
 static ABI int32_t guest_sigreturn(void *context) { (void)context; return ERR(38); }
 static ABI int32_t guest_setcontext(void *context) { (void)context; return ERR(38); }
