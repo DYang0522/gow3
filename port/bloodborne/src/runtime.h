@@ -29,6 +29,7 @@ int runtime_savedata_mounted(void);
 typedef void (ABI *GuestCallback)(void);
 void runtime_start(uint64_t capabilities);
 uintptr_t runtime_resolve(const char *name, int is_data);
+uintptr_t runtime_resolve_native(const char *name, int is_data, uintptr_t native);
 void runtime_report(void);
 void runtime_set_report_hook(void (*hook)(void));
 void runtime_finalize(void *dso);
