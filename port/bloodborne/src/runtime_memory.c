@@ -575,7 +575,7 @@ static ABI int32_t posix_msync(void *address,uint64_t length,int flags) {
         !runtime_memory_is_mapped((uintptr_t)address,length)) {
         *runtime_errno()=EINVAL; return -1;
     }
-    /* The backing pool is memory-resident; file-backed mappings are private copies. */
+    /* The backing pool is memory-resident; file-backed mappings are snapshot copies. */
     return 0;
 }
 static ABI int32_t kernel_mlock(const void *address,uint64_t length) {
