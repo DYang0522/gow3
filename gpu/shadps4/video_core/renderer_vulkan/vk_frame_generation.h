@@ -41,6 +41,7 @@ public:
                     FrameGenCamera camera = {});
     void CaptureHudless(vk::CommandBuffer cmdbuf, vk::Image source, vk::Format format, u32 w, u32 h);
     vk::ImageView Hudless(vk::Format format, vk::Extent2D& size);
+    vk::Image HudlessImage() const noexcept { return vk::Image(hudless_image); }
     u32 Generate(vk::CommandBuffer& cmdbuf, vk::Image color, vk::ImageView color_view,
                  vk::ImageUsageFlags color_usage, vk::Image hudless, vk::ImageView hudless_view,
                  u32 width, u32 height, std::span<const Output> outputs);
