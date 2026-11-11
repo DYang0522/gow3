@@ -21,6 +21,10 @@ public:
         const char* v = std::getenv(name);
         return v ? std::strtol(v, nullptr, 10) : fallback;
     }
+    static long Number(const char* spartan, const char* bloodborne, long fallback) {
+        const char* v = Variable(spartan, bloodborne);
+        return v ? std::strtol(v, nullptr, 10) : fallback;
+    }
     static const char* Variable(const char* spartan, const char* bloodborne) {
 #ifdef BB_PORT_BUILD
         return std::getenv(bloodborne);
@@ -52,7 +56,7 @@ public:
     // An explicit SPARTAN_VBLANK_HZ is used as given, without a limit (measurements).
     u32 GetVblankFrequency() {
         static const u32 value = [] {
-            const long hz = Number("SPARTAN_VBLANK_HZ", 60);
+            const long hz = Number("SPARTAN_VBLANK_HZ", "BB_VBLANK_HZ", 60);
             return hz > 0 ? u32(hz) : 480u;
         }();
         return value;
@@ -60,9 +64,10 @@ public:
     /// Frames per second the present thread lets through; 0 = no limit. SPARTAN_FPS_LIMIT overrides.
     u32 GetFrameLimit() {
         static const u32 value = [] {
-            const long limit = Number("SPARTAN_FPS_LIMIT", -1);
+            const long limit = Number("SPARTAN_FPS_LIMIT", "BB_FPS_LIMIT", -1);
             if (limit >= 0) return u32(limit);
-            return Number("SPARTAN_VBLANK_HZ", 60) > 0 ? 0u : std::min<u32>(SpartanDisplayRefreshHz(), 120);
+            return Number("SPARTAN_VBLANK_HZ", "BB_VBLANK_HZ", 60) > 0
+                       ? 0u : std::min<u32>(SpartanDisplayRefreshHz(), 120);
         }();
         return value;
     }

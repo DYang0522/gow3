@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <limits>
+#include <utility>
 #include "common/assert.h"
 #include "common/logging/log.h"
 #include "core/emulator_settings.h"
