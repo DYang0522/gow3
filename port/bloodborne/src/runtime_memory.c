@@ -508,8 +508,10 @@ static int direct_range_allocated(uint64_t phys, uint64_t size) {
 static int32_t map_flexible_locked(void **inout,uint64_t size,int prot,int flags);
 static ABI int32_t direct_unmap(void *address,uint64_t size);
 static ABI int32_t direct_protect(void *address,uint64_t size,int prot);
-#define GUEST_MAP_FIXED 0x0010
-#define GUEST_MAP_ANON  0x1000
+#define GUEST_MAP_SHARED  0x0001
+#define GUEST_MAP_PRIVATE 0x0002
+#define GUEST_MAP_FIXED   0x0010
+#define GUEST_MAP_ANON    0x1000
 #define GUEST_MAP_FAILED ((void *)(intptr_t)-1)
 static int posix_memory_errno(int32_t result) {
     switch ((uint32_t)result&0xffffu) {
@@ -521,7 +523,9 @@ static int posix_memory_errno(int32_t result) {
     }
 }
 static ABI void *posix_mmap(void *address,uint64_t length,int prot,int flags,int fd,int64_t offset) {
-    if (!length || (prot&~0x37) || offset<0 || (offset%PAGE)) {
+    int sharing=flags&(GUEST_MAP_SHARED|GUEST_MAP_PRIVATE);
+    if (!length || (prot&~0x37) || offset<0 || (offset%PAGE) ||
+        (sharing!=GUEST_MAP_SHARED && sharing!=GUEST_MAP_PRIVATE)) {
         *runtime_errno()=EINVAL; return GUEST_MAP_FAILED;
     }
     uint64_t size=align_up(length,PAGE);
