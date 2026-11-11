@@ -17,6 +17,7 @@
 #include <unistd.h>
 #ifdef _WIN32
 #include <windows.h>
+#include <malloc.h>
 #else
 #include <sys/syscall.h>
 #include <sys/mman.h>
