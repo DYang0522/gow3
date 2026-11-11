@@ -367,25 +367,26 @@ static int32_t create(GuestThread **out,ThreadAttr **attr_slot,GuestEntry entry,
     if (attr_error) { free(t); return thread_error(attr_error); }
     uint64_t stack=t->attr.stack<MIN_STACK ? MIN_STACK : t->attr.stack;
     /* Stacks below 1 TiB as on PS4; guest code may pack stack addresses. */
-    size_t stack_bytes=(size_t)stack+STACK_MARGIN;
+    if (stack>SIZE_MAX-STACK_MARGIN-16383u) {
+        pthread_attr_destroy(&host); free(t); return ERR(12);
+    }
+    size_t stack_bytes=((size_t)stack+STACK_MARGIN+16383u)&~(size_t)16383u;
 #ifdef _WIN32
     /* Windows places the stack itself (low: no high-entropy ASLR) and commits all of it:
      * guest code has no stack probes and would step over the guard page. */
-    pthread_attr_setstacksize(&host,stack_bytes);
+    int stack_error=pthread_attr_setstacksize(&host,stack_bytes);
+    if (stack_error) { pthread_attr_destroy(&host); free(t); return thread_error(stack_error); }
 #else
     void *stack_memory=runtime_low_map(stack_bytes,PROT_READ|PROT_WRITE);
-    if (stack_memory) {
-        t->stack_memory=stack_memory;
-        t->stack_mapping_size=(stack_bytes+16383u)&~(size_t)16383u;
-        int stack_error=pthread_attr_setstack(&host,stack_memory,stack_bytes);
-        if (stack_error) {
-            munmap(stack_memory,t->stack_mapping_size);
-            t->stack_memory=NULL;
-            t->stack_mapping_size=0;
-            pthread_attr_setstacksize(&host,stack_bytes);
-        }
-    } else {
-        pthread_attr_setstacksize(&host,stack_bytes);
+    if (!stack_memory) { pthread_attr_destroy(&host); free(t); return ERR(12); }
+    t->stack_memory=stack_memory;
+    t->stack_mapping_size=stack_bytes;
+    int stack_error=pthread_attr_setstack(&host,stack_memory,stack_bytes);
+    if (stack_error) {
+        release_stack(t);
+        pthread_attr_destroy(&host);
+        free(t);
+        return thread_error(stack_error);
     }
 #endif
     publish(t);
