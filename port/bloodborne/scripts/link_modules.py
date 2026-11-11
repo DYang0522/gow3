@@ -236,8 +236,10 @@ def link(game, out, module_names=DEFAULT_MODULES):
         tls = next((p for p in m['ph'] if p['type'] == 7), None)
         module_id = 0
         if tls:
-            if tls['filesz'] > tls['memsz'] or not mapped(tls['vaddr'], tls['memsz']):
-                raise ValueError(f'{filename}: unsupported TLS layout')
+            alignment = tls['align'] or 1
+            if (tls['filesz'] > tls['memsz'] or not mapped(tls['vaddr'], tls['memsz']) or
+                    alignment > 4096 or alignment & (alignment - 1)):
+                raise ValueError(f'{filename}: unsupported TLS layout/alignment')
             module_id = tls_module
             tls_module += 1
         tls_relocations = 0
@@ -284,6 +286,7 @@ def link(game, out, module_names=DEFAULT_MODULES):
         table.append(dict(file=filename, base=base, size=modsize, init=base + m['tags'].get(12, 0),
                           tls_address=base + tls['vaddr'] if tls else 0, tls_memsz=tls['memsz'] if tls else 0,
                           tls_filesz=tls['filesz'] if tls else 0, tls_module=module_id,
+                          tls_align=(tls['align'] or 1) if tls else 0,
                           tls_relocations=tls_relocations, exports=count, sha256=m['sha256']))
         base = (base + modsize + 65535) & ~65535
 
@@ -301,21 +304,23 @@ def link(game, out, module_names=DEFAULT_MODULES):
     main_tls = next((p for p in main['ph'] if p['type'] == 7), None)
     main_tls_values = (main_tls['vaddr'], main_tls['filesz'], main_tls['memsz'], main_tls['align']) if main_tls else (0, 0, 0, 0)
     if main_tls and (main_tls['filesz'] > main_tls['memsz'] or main_tls['memsz'] > 1024 * 1024
-                     or main_tls['vaddr'] + main_tls['filesz'] > size):
-        raise ValueError('unsupported eboot TLS layout')
+                     or main_tls['vaddr'] + main_tls['filesz'] > size
+                     or (main_tls['align'] or 1) > 4096
+                     or ((main_tls['align'] or 1) & ((main_tls['align'] or 1) - 1))):
+        raise ValueError('unsupported eboot TLS layout/alignment')
     procparam = next(p for p in main['ph'] if p['type'] == 0x61000001)
     untranslated = bytes(image)
     image, segments, cpu_compat = patch_image(image, segments, main, table, relocs)
     cpu_compat['libc'] = libc_changes
     red_zone = protect_image(image, segments, untranslated, relocs)
     with atomic_output(out / 'boot-linked.bin') as f:
-        f.write(struct.pack('<8s6Q', b'BBPROBE5', len(image), entry, len(segments), len(relocs), len(names), flags))
+        f.write(struct.pack('<8s6Q', b'BBPROBE6', len(image), entry, len(segments), len(relocs), len(names), flags))
         f.write(struct.pack('<Q', procparam['vaddr']))
         f.write(struct.pack('<4Q', *main_tls_values))
         f.write(struct.pack('<Q', len(table)))
         for t in table:
-            f.write(struct.pack('<7Q', t['base'], t['size'], t['init'], t['tls_address'], t['tls_memsz'],
-                                t['tls_filesz'], t['tls_module']))
+            f.write(struct.pack('<8Q', t['base'], t['size'], t['init'], t['tls_address'], t['tls_memsz'],
+                                t['tls_filesz'], t['tls_module'], t['tls_align']))
         f.write(struct.pack('<Q', len(bindings)))
         for binding in bindings:
             f.write(struct.pack('<3Q', *binding))
