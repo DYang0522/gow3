@@ -129,8 +129,7 @@ struct Values {
     /// Live resolution and preset changes (run.sh): 0 off by default (startup patch, fastest
     /// on the Steam Deck and older GPUs), -1 auto (strong discrete GPUs), 1 on. On restart.
     std::atomic<int> live_resolution{0};
-    /// Frame generation and the frames per game frame (2x with FSR 3.1, up to 4x with DLSS on
-    /// RTX 50). dlssg_max_multiplier: 1 without DLSS Frame Generation.
+    /// Frame generation and the frames per game frame (2x with FSR 3.1).
     std::atomic<int> frame_gen{FrameGenOff};
     std::atomic<const char*> frame_gen_problem{nullptr};
     /// Generated frames actually presented for the latest game frame.
