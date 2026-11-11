@@ -461,6 +461,11 @@ static ABI int32_t playgo_locus(int32_t handle,const uint16_t *ids,uint32_t coun
 }
 static ABI int32_t playgo_speed(int32_t handle,int32_t speed) { (void)speed; return handle==playgo_handle && handle ? 0 : PLAYGO_BAD_HANDLE; }
 
+/* ---- Sysmodule: all guest HLE modules are linked/registered before eboot entry ---- */
+static ABI int32_t sysmodule_load(int32_t module) { (void)module; return 0; }
+static ABI int32_t sysmodule_unload(int32_t module) { (void)module; return 0; }
+static ABI int32_t sysmodule_is_loaded(int32_t module) { (void)module; return 1; }
+
 /* ---- DiscMap: the game is fully installed, no disc bitmap exists ---- */
 #define DISC_MAP_NO_BITMAP ((int32_t)0x81100004)
 static ABI int32_t discmap_on_hdd(const char *path,int64_t offset,int64_t size,int32_t *result) {
@@ -483,6 +488,8 @@ static ABI int32_t audio_in_open(void) { return AUDIO_IN_NOT_OPENED; }
 
 
 static const RuntimeExport exports[]={
+    {"sceSysmoduleLoadModule",sysmodule_load}, {"sceSysmoduleUnloadModule",sysmodule_unload},
+    {"sceSysmoduleIsLoaded",sysmodule_is_loaded},
     {"sceUserServiceInitialize",user_initialize}, {"sceUserServiceTerminate",user_terminate},
     {"sceUserServiceGetInitialUser",user_initial}, {"sceUserServiceGetLoginUserIdList",user_list},
     {"sceUserServiceGetUserName",user_name}, {"sceUserServiceGetEvent",user_event},
