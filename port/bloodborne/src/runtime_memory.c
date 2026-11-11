@@ -1033,7 +1033,7 @@ int runtime_memory_write_backing(uintptr_t address, const void *data, uint64_t s
     if (!size) return 1;
     if (!data || address<USER_MIN || address>=USER_MAX || size>USER_MAX-address) return 0;
     const uintptr_t end=address+(uintptr_t)size;
-    read_lock();
+    write_lock();
     int ok=1;
     for (uintptr_t at=address; at<end && ok;) {
         size_t i=vma_index(at);
@@ -1042,7 +1042,7 @@ int runtime_memory_write_backing(uintptr_t address, const void *data, uint64_t s
         memcpy(backing_base+vmas[i].phys+(at-vmas[i].start),(const unsigned char *)data+(at-address),(size_t)n);
         at+=(uintptr_t)n;
     }
-    read_unlock();
+    write_unlock();
     return ok;
 }
 /* Reads through the backing view: the host's copies of guest memory (uploads), which the GPU's
