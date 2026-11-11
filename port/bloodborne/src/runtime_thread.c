@@ -47,7 +47,7 @@ typedef struct GuestThread {
     void *argument, *result;
     ThreadAttr attr;
     char name[32];
-    int detached, finished, joined, host_owned;
+    int detached, finished, joined, host_owned, host_main;
 #ifdef _WIN32
     bb_jmp_buf exit_jump; /* no SEH unwinding through guest frames */
 #else
@@ -59,6 +59,9 @@ typedef struct GuestThread {
 static pthread_mutex_t lock=PTHREAD_MUTEX_INITIALIZER;
 static ThreadAttr *attributes;
 static GuestThread *threads;
+static pthread_key_t host_cleanup_key;
+static pthread_once_t host_cleanup_once=PTHREAD_ONCE_INIT;
+static int host_cleanup_key_ready;
 static _Thread_local GuestThread *current;
 static _Thread_local int32_t guest_errno;
 static const unsigned char *tls_template;
@@ -118,6 +121,15 @@ static GuestThread *new_thread(void) {
 static void publish(GuestThread *t) {
     pthread_mutex_lock(&lock); t->next=threads; threads=t; pthread_mutex_unlock(&lock);
 }
+static void host_thread_cleanup(void *value) {
+    (void)value;
+    runtime_thread_keys_cleanup();
+    runtime_thread_tls_cleanup();
+    runtime_thread_detach_guest();
+}
+static void create_host_cleanup_key(void) {
+    host_cleanup_key_ready=pthread_key_create(&host_cleanup_key,host_thread_cleanup)==0;
+}
 /* Host threads that call into guest code without being created by the guest
  * (the main thread, test threads) get a record on first use. */
 GuestThread *runtime_thread_current(void) {
@@ -127,6 +139,8 @@ GuestThread *runtime_thread_current(void) {
     t->host=pthread_self(); t->host_owned=1;
     snprintf(t->name,sizeof(t->name),"host");
     attach(t); publish(t);
+    pthread_once(&host_cleanup_once,create_host_cleanup_key);
+    if (host_cleanup_key_ready) pthread_setspecific(host_cleanup_key,t);
     return t;
 }
 /* Host threads that call guest code (HLE decoders invoking guest callbacks) need
@@ -138,7 +152,7 @@ void runtime_thread_attach_host(const char *name) {
 uint64_t *runtime_thread_dtv(void) { return runtime_thread_current()->dtv; }
 void runtime_thread_detach_guest(void) {
     GuestThread *t=current;
-    if (!t || t->host_owned || !t->tls_block) return;
+    if (!t || t->host_main || !t->tls_block) return;
     set_gs(NULL);
 #ifdef _WIN32
     _aligned_free(t->tls_block);
@@ -151,6 +165,7 @@ void runtime_thread_detach_guest(void) {
 }
 void runtime_thread_attach_main(void) {
     GuestThread *t=runtime_thread_current();
+    t->host_main=1;
     snprintf(t->name,sizeof(t->name),"main");
 }
 static GuestThread *find_thread(void *handle) {
@@ -369,8 +384,9 @@ static ABI int32_t thread_detach(GuestThread *t) {
 }
 static ABI __attribute__((noreturn)) void thread_exit(void *value) {
     GuestThread *t=runtime_thread_current();
-    if (t->host_owned) { fputs("STOP: pthread_exit on host-owned/main thread\n",stderr); exit(21); }
+    if (t->host_main) { fputs("STOP: pthread_exit on main thread\n",stderr); exit(21); }
     t->result=value;
+    if (t->host_owned) pthread_exit(value); /* HLE-owned host thread; pthread key performs TLS cleanup. */
     /* No host unwinder: guest frames have no registered FDEs. */
     exit_longjmp(t);
 }
