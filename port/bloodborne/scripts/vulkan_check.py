@@ -51,6 +51,10 @@ def missing(device):
         lacking += [name for name in REQUIRED_FEATURES if not device['features'].get(name)]
     if 'VK_EXT_vertex_attribute_divisor' in device['extensions']:
         lacking += [name for name in REQUIRED_DIVISOR_FEATURES if not device['features'].get(name)]
+    lacking += [name for name in ('sparseBinding', 'sparseResidencyBuffer')
+                if not device['features'].get(name)]
+    if not device.get('sparse_queue'):
+        lacking.append('sparse-binding queue')
     return lacking
 
 
@@ -136,6 +140,11 @@ class Features2(c.Structure):
     _fields_ = [('sType', c.c_uint32), ('pNext', c.c_void_p), ('features', c.c_uint32 * 55)]
 
 
+class QueueFamilyProperties(c.Structure):
+    _fields_ = [('queueFlags', c.c_uint32), ('queueCount', c.c_uint32),
+                ('timestampValidBits', c.c_uint32), ('minImageTransferGranularity', c.c_uint32 * 3)]
+
+
 class MemoryHeap(c.Structure):
     _fields_ = [('size', c.c_uint64), ('flags', c.c_uint32)]
 
@@ -181,6 +190,9 @@ def query():
                      'vkGetPhysicalDeviceFeatures2'):
             getattr(vk, name).argtypes = [c.c_void_p, c.c_void_p]
             getattr(vk, name).restype = None
+        vk.vkGetPhysicalDeviceQueueFamilyProperties.argtypes = [
+            c.c_void_p, c.POINTER(c.c_uint32), c.c_void_p]
+        vk.vkGetPhysicalDeviceQueueFamilyProperties.restype = None
         vk.vkEnumerateDeviceExtensionProperties.argtypes = [c.c_void_p, c.c_char_p, c.POINTER(c.c_uint32),
                                                             c.c_void_p]
         devices = []
@@ -200,6 +212,12 @@ def query():
                 listed = (ExtensionProperties * number.value)()
                 if vk.vkEnumerateDeviceExtensionProperties(handle, None, c.byref(number), listed) in (0, 5):
                     extensions = {e.extensionName.decode('ascii', 'replace') for e in listed[:number.value]}
+            queue_count = c.c_uint32()
+            vk.vkGetPhysicalDeviceQueueFamilyProperties(handle, c.byref(queue_count), None)
+            queue_props = (QueueFamilyProperties * max(1, queue_count.value))()
+            if queue_count.value:
+                vk.vkGetPhysicalDeviceQueueFamilyProperties(handle, c.byref(queue_count), queue_props)
+            sparse_queue = any(q.queueCount and q.queueFlags & 0x8 for q in queue_props[:queue_count.value])
             features = {}
             if ('VK_EXT_robustness2' in extensions or
                     'VK_EXT_vertex_attribute_divisor' in extensions):
@@ -216,9 +234,12 @@ def query():
                     features.update({name: bool(getattr(robustness, name)) for name in REQUIRED_FEATURES})
                 if divisor:
                     features.update({name: bool(getattr(divisor, name)) for name in REQUIRED_DIVISOR_FEATURES})
+            # VkPhysicalDeviceFeatures fields 44 and 45 are sparseBinding and sparseResidencyBuffer.
+            features['sparseBinding'] = bool(chain.features[44]) if 'chain' in locals() else False
+            features['sparseResidencyBuffer'] = bool(chain.features[45]) if 'chain' in locals() else False
             devices.append({'name': name, 'api': api, 'type': device_type, 'memory': local,
-                            'extensions': extensions, 'features': features, 'vendor': vendor,
-                            'device_id': device_id})
+                            'extensions': extensions, 'features': features, 'sparse_queue': sparse_queue,
+                            'vendor': vendor, 'device_id': device_id})
         return version.value, devices
     finally:
         vk.vkDestroyInstance(instance, None)
