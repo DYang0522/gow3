@@ -186,6 +186,14 @@ TemporalUpscaler::TemporalUpscaler(const Instance& instance_, Scheduler& schedul
                         : dlss->Problem();
         PortSettings::ConfigureDlssSupport(dlss && dlss->Available(), problem.c_str());
     }
+#ifdef BB_PORT_BUILD
+    // Bloodborne has no GOW3 shader-hash triggers. Its patched startup resolution is BB_RENDER_RES.
+    enabled = true;
+    trigger_hash = 0;
+    ui_trigger_vs = 0;
+    scaled_session = PortSettings::FixedRenderSession();
+    const char* render_res = std::getenv("BB_RENDER_RES");
+#else
     // Available unless SPARTAN_UPSCALER=none; on/off and the parameters are the menu's settings.
     const char* env = std::getenv("SPARTAN_UPSCALER");
     enabled = !(env && std::strcmp(env, "none") == 0);
@@ -202,14 +210,16 @@ TemporalUpscaler::TemporalUpscaler(const Instance& instance_, Scheduler& schedul
             target_height = h;
         }
     }
-    // Explicit resolution overrides retain the old compatibility path. Normal presets
-    // keep guest allocations/UI native and change only host raster targets at frame boundaries.
     scaled_session = std::getenv("SPARTAN_RENDER_RES") && std::getenv("SPARTAN_RENDER_RES")[0];
+    const char* render_res = std::getenv("SPARTAN_RENDER_RES");
+#endif
+    // Explicit resolution overrides retain the startup-patched compatibility path. Normal
+    // presets keep guest allocations/UI native and change host raster targets at frame boundaries.
     render_width = 1920;
     render_height = 1080;
-    if (const char* res = std::getenv("SPARTAN_RENDER_RES")) {
+    if (render_res && render_res[0]) {
         u32 w = 0, h = 0;
-        if (std::sscanf(res, "%ux%u", &w, &h) == 2 && w && h) {
+        if (std::sscanf(render_res, "%ux%u", &w, &h) == 2 && w && h) {
             render_width = w;
             render_height = h;
         }
@@ -289,8 +299,8 @@ bool TemporalUpscaler::RasterScaling() const {
 }
 
 bool TemporalUpscaler::OnFrameStart() {
-    // spartanport: SPARTAN_PRESET_FILE=<file> holding a preset number, read about once a second: switches
-    // the preset like the menu does (scripted tests of live preset changes).
+#ifndef BB_PORT_BUILD
+    // SPARTAN_PRESET_FILE is a GOW3-side test hook, not a Bloodborne settings source.
     static const char* preset_file = std::getenv("SPARTAN_PRESET_FILE");
     if (preset_file && ++preset_file_frames % 64 == 0) {
         if (FILE* f = std::fopen(preset_file, "r")) {
@@ -298,19 +308,16 @@ bool TemporalUpscaler::OnFrameStart() {
             int output = -1;
             int provider = -1;
             const int fields = std::fscanf(f, "%d %d %d", &value, &output, &provider);
-            if (fields >= 1 && value >= 0 &&
-                value < PortSettings::PresetCount) {
+            if (fields >= 1 && value >= 0 && value < PortSettings::PresetCount)
                 PortSettings::Get().preset.store(value);
-            }
-            if (fields >= 2 && output >= 0 && output < PortSettings::OutputCount) {
+            if (fields >= 2 && output >= 0 && output < PortSettings::OutputCount)
                 PortSettings::Get().output_res.store(output);
-            }
-            if (fields == 3 && provider >= 0 && provider < PortSettings::UpscalerCount) {
+            if (fields == 3 && provider >= 0 && provider < PortSettings::UpscalerCount)
                 PortSettings::Get().upscaler.store(provider);
-            }
             std::fclose(f);
         }
     }
+#endif
     const auto& settings = PortSettings::Get();
     // The guest's startup resolution patch remains in effect until restart. Keep the FSR
     // model at the applied preset while the menu saves the requested one for run.sh.
@@ -705,18 +712,25 @@ void TemporalUpscaler::RecordTaa(vk::CommandBuffer cmdbuf, vk::ImageView color,
         std::array<float, 2> jitter;
         u32 reset, pad;
         std::array<std::array<float, 4>, 3> depth;
-    } params{jitter, reset ? 1u : 0u, std::getenv("SPARTAN_TAA_DIAGNOSTICS") ?
+    } params{jitter, reset ? 1u : 0u,
+#ifdef BB_PORT_BUILD
+             0u,
+#else
+             std::getenv("SPARTAN_TAA_DIAGNOSTICS") ?
                  u32(std::clamp(std::atoi(std::getenv("SPARTAN_TAA_DIAGNOSTICS")),1,3)) : 0u,
+#endif
              camera_motion.TaaDepthParameters()};
     // Optional techniques for A/B in one run (SPARTAN_TOGGLE_FILE bits 51-54): tonemapped blending,
     // YCoCg clipping, variance clipping, 3x3 reconstruction. Measured in game on 2026-10-02
     // (static and panning camera, interleaved captures): none improved stability beyond run
     // noise; YCoCg clipping and the reconstruction made it worse. Default: all off.
+#ifndef BB_PORT_BUILD
     params.pad |= (SpartanToggle::Disabled(SpartanToggle::TaaTonemapBlend) ? 1u << 8 : 0u) |
                   (SpartanToggle::Disabled(SpartanToggle::TaaClip) ? 2u << 8 : 0u) |
                   (SpartanToggle::Disabled(SpartanToggle::TaaVariance) ? 4u << 8 : 0u) |
                   (SpartanToggle::Disabled(SpartanToggle::TaaFilter) ? 8u << 8 : 0u) |
                   (SpartanToggle::Disabled(SpartanToggle::TaaKeepNearerHistory) ? 16u << 8 : 0u);
+#endif
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, *taa_pipeline);
     if (params.pad & 0xffu) {
         static u32 diagnostic_frames = 0;
@@ -1152,15 +1166,11 @@ void TemporalUpscaler::Run() {
                                          FFX_VK_PORTABLE_RESOURCE_STATE_GENERIC_READ);
         }
         info.transparencyAndCompositionMask.structSize = sizeof(info.transparencyAndCompositionMask);
-        // Toggle 1 << 26 (tests): the opposite sign convention for FSR.
-        #ifdef BB_PORT_BUILD
-        const float sign = PortSettings::Get().fsr4_invert_jitter ? -1.0f : 1.0f;
+        // The GOW3 A/B toggle flips FSR 3's jitter sign; Bloodborne uses the provider default.
+#ifdef BB_PORT_BUILD
+        const float sign = 1.0f;
 #else
-    #ifdef BB_PORT_BUILD
-    const float sign = PortSettings::Get().fsr4_invert_jitter ? -1.0f : 1.0f;
-#else
-    const float sign = SpartanToggle::Disabled(1u << 26) ? -1.0f : 1.0f;
-#endif
+        const float sign = SpartanToggle::Disabled(1u << 26) ? -1.0f : 1.0f;
 #endif
         info.jitterOffset = {sign * jitter[0], sign * jitter[1]};
         info.motionVectorScale = {1.0f, 1.0f};
@@ -1250,11 +1260,16 @@ void TemporalUpscaler::Run() {
         // Debug (menu or toggle 1 << 28): the reactive mask in red over a darkened frame;
         // or the motion vectors (menu).
         const int debug_view = PortSettings::Get().debug_view;
+#ifdef BB_PORT_BUILD
+        const u32 mode = has_reactive && debug_view == PortSettings::DebugReactive ? 1
+                         : debug_view == PortSettings::DebugMotion ? 2 : 0;
+#else
         const u32 mode = has_reactive && (debug_view == PortSettings::DebugReactive ||
                                           SpartanToggle::Disabled(1u << 28))
                              ? 1
                          : debug_view == PortSettings::DebugMotion ? 2
                                                                  : 0;
+#endif
         cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, *merge_pipeline);
         cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute, *merge_pipeline_layout, 0,
                                     writes);
@@ -1756,7 +1771,11 @@ void TemporalUpscaler::RunScaled() {
     }
 
     info.transparencyAndCompositionMask.structSize = sizeof(info.transparencyAndCompositionMask);
+#ifdef BB_PORT_BUILD
+    const float sign = 1.0f;
+#else
     const float sign = SpartanToggle::Disabled(1u << 26) ? -1.0f : 1.0f;
+#endif
     info.jitterOffset = {sign * jitter[0], sign * jitter[1]};
     info.motionVectorScale = {1.0f, 1.0f};
     info.renderSize = {w, h};

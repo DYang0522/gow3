@@ -17,8 +17,12 @@
 #else
 #include "spartanport_overlay.h"
 #endif
+#ifdef BB_PORT_BUILD
+#include "bbport_settings.h"
+#else
 #include "spartanport_settings.h"
 #include "spartanport_graphics.h"
+#endif
 #include "video_core/renderer_vulkan/vk_temporal_upscaler.h"
 #include "video_core/renderer_vulkan/vk_presenter.h"
 #include "video_core/renderer_vulkan/vk_warmup_inbox.h"
@@ -333,8 +337,10 @@ Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_
         free_queue.push(&frame);
     }
 
+#ifndef BB_PORT_BUILD
     fsr_pass.Create(device, instance.GetAllocator(), num_images,
                     instance.IsShaderFloat16Supported());
+#endif
     pp_pass.Create(device, swapchain.GetSurfaceFormat().format);
 #ifdef BB_PORT_BUILD
     BbOverlay::Init(instance, swapchain.GetSurfaceFormat().format, num_images);
@@ -670,7 +676,8 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     }
     expected_ratio = static_cast<float>(image_size.width) / static_cast<float>(image_size.height);
 
-    // spartanport: FSR 1, RCAS and its strength come from the in-game menu, every frame.
+#ifndef BB_PORT_BUILD
+    // SpartanPort's final FSR 1 / RCAS pass is not part of Bloodborne's temporal pipeline.
     const auto& graphics = SpartanSettings::Get();
     fsr_settings.enable = graphics.fsr1;
     fsr_settings.use_rcas = graphics.rcas;
@@ -685,6 +692,7 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
                                   int(frame->width), int(frame->height));
     image_view = fsr_pass.Render(cmdbuf, image_view, image_size, {frame->width, frame->height},
                                  fsr_settings, frame->is_hdr);
+#endif
 
     // Vulkan has no sRGB variant of the 10-bit format, so an A2R10G10B10Srgb buffer reaches
     // the post process pass still sRGB encoded and has to be decoded there instead.
@@ -712,13 +720,13 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     SubmitInfo info{};
     draw_scheduler.Flush(info);
 
-    // spartanport: the GPU command thread runs at most SPARTAN_FRAMES_AHEAD (default 1) guest frames
-    // ahead of the GPU: it waits here for the frame that many flips back. When the GPU is the
-    // bottleneck it finishes frames at an even rate; without this bound the command thread ran
-    // ahead and then blocked wherever a resource ran out, so flips (and the guest's frame
-    // timing) came in bursts: 12.5/25 ms alternation at 80 FPS. 0 turns it off.
-    // The in-game menu changes it live (SpartanSettings::frames_queued; SPARTAN_FRAMES_AHEAD at start).
+    // Keep one guest frame queued on the Bloodborne path; SpartanPort's adjustable queue
+    // setting belongs to the GOW3-specific settings layer.
+#ifdef BB_PORT_BUILD
+    constexpr u32 frames_ahead = 1;
+#else
     const u32 frames_ahead = u32(std::max(0, SpartanSettings::Get().frames_queued.load()));
+#endif
     if (!frames_ahead) {
         recent_frame_ticks.clear();
     } else {

@@ -12,8 +12,10 @@
 
 #include "ffx_vk_fsr4_v07.h"
 #include "ffx_vk_fsr4_v07_assets.h"
+#ifndef BB_PORT_BUILD
 #include "spartanport_settings.h"
 #include "video_core/renderer_vulkan/fsr411/fsr411.h"
+#endif
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 
@@ -22,7 +24,11 @@ namespace Vulkan {
 namespace {
 
 std::string AssetDir() {
+#ifdef BB_PORT_BUILD
+    const char* dir = std::getenv("BB_FSR4_DIR");
+#else
     const char* dir = std::getenv("SPARTAN_FSR4_DIR");
+#endif
     return dir && dir[0] ? dir : "fsr4_shaders";
 }
 
@@ -67,10 +73,12 @@ struct Fsr4Upscaler::Impl {
     bool fatal = false;
     u64 next_frame_id = 1;
     std::deque<std::pair<u64, u64>> in_flight; ///< provider frame id, scheduler tick
-    // spartanport: FSR 4.1.1 (upscaler=fsr411): the replay of AMD's 4.1.1 DLL (fsr411/).
+#ifndef BB_PORT_BUILD
+    // GOW3-only FSR 4.1.1 provider.
     std::unique_ptr<Fsr411::Upscaler> fsr411;
-    std::deque<u64> fsr411_ticks; ///< scheduler ticks of its recent frames (constant ring)
+    std::deque<u64> fsr411_ticks;
     std::string fsr411_described;
+#endif
 
     Impl(const Instance& instance_, Scheduler& scheduler_)
         : instance{instance_}, scheduler{scheduler_} {}
@@ -231,6 +239,7 @@ struct Fsr4Upscaler::Impl {
         return ffxFsr4VkSetExternalImageState(&backend, &state);
     }
 
+#ifndef BB_PORT_BUILD
     bool Record411(const Frame& f) {
         if (!instance.IsFsr411Supported()) {
             Fail("FSR 4.1.1 needs INT8 dot products and VK_VALVE_shader_mixed_float_dot_product", true);
@@ -275,10 +284,14 @@ struct Fsr4Upscaler::Impl {
         return true;
     }
 
+#endif
+
     bool Record(const Frame& f) {
+#ifndef BB_PORT_BUILD
         if (SpartanSettings::Get().upscaler == SpartanSettings::UpscalerFsr411) {
             return Record411(f);
         }
+#endif
         if (fatal) {
             return false;
         }
