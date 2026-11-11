@@ -194,8 +194,12 @@ TemporalUpscaler::TemporalUpscaler(const Instance& instance_, Scheduler& schedul
     {
         const Dlss* dlss = Dlss::Get();
         static std::string problem;
+#ifdef BB_PORT_BUILD
+        problem = !dlss ? "DLSS bridge and nvngx_dlss.dll are not installed" : dlss->Problem();
+#else
         problem = !dlss ? "spartanport_dlss.dll and nvngx_dlss.dll are not installed"
                         : dlss->Problem();
+#endif
         PortSettings::ConfigureDlssSupport(dlss && dlss->Available(), problem.c_str());
     }
 #ifdef BB_PORT_BUILD
