@@ -19,9 +19,14 @@ class Instance;
 class Scheduler;
 
 struct FrameGenCamera {
+    std::array<float, 3> position{};
+    std::array<float, 3> right{1.0f, 0.0f, 0.0f};
+    std::array<float, 3> up{0.0f, 1.0f, 0.0f};
+    std::array<float, 3> forward{0.0f, 0.0f, 1.0f};
     float near_plane = 0.1f;
     float far_plane = 3000.0f;
     float vertical_fov = 1.0f;
+    bool valid = false;
 };
 
 class FrameGenerator {

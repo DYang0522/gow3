@@ -667,7 +667,7 @@ void PipelineCache::FinishCompilations() {
 
 bool PipelineCache::AsyncCompilation() const {
 #ifdef BB_PORT_BUILD
-    return compiler;
+    return compiler != nullptr;
 #else
     return compiler && SpartanSettings::Get().async_shaders.load(std::memory_order_relaxed);
 #endif
