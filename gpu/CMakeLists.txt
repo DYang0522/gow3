@@ -138,6 +138,8 @@ add_custom_target(host_shaders DEPENDS ${SHADER_HEADERS})
 file(GLOB_RECURSE VIDEO_CORE CONFIGURE_DEPENDS shadps4/video_core/*.cpp)
 file(GLOB_RECURSE RECOMPILER CONFIGURE_DEPENDS shadps4/shader_recompiler/*.cpp)
 list(FILTER VIDEO_CORE EXCLUDE REGEX "renderdoc\\.cpp$")
+set(SPARTAN_VIDEO_CORE_SOURCES ${VIDEO_CORE})
+list(FILTER SPARTAN_VIDEO_CORE_SOURCES EXCLUDE REGEX "vk_frame_generation\\.cpp$")
 set(COMMON
     shadps4/common/decoder.cpp shadps4/common/error.cpp
     shadps4/common/io_file.cpp shadps4/common/native_clock.cpp shadps4/common/number_utils.cpp
@@ -154,7 +156,7 @@ if (WIN32)
 else()
     set(SPARTANGPU_KIND SHARED)
 endif()
-add_library(spartanportgpu ${SPARTANGPU_KIND} ${VIDEO_CORE} ${RECOMPILER} ${COMMON} ${SHIM_SOURCES}
+add_library(spartanportgpu ${SPARTANGPU_KIND} ${SPARTAN_VIDEO_CORE_SOURCES} ${RECOMPILER} ${COMMON} ${SHIM_SOURCES}
     shadps4/core/libraries/gnmdriver/gnmdriver.cpp
     shadps4/core/libraries/videoout/driver.cpp shadps4/core/libraries/videoout/video_out.cpp
     shadps4/core/libraries/kernel/equeue.cpp ${AVPLAYER}
@@ -202,13 +204,15 @@ list(FILTER BB_BASE_SHIM_SOURCES EXCLUDE REGEX
     "spartanport_(actors|orbs|perf_stats|png|overlay|settings|write_log)\\.cpp$")
 list(FILTER BB_BASE_SHIM_SOURCES EXCLUDE REGEX "spartanportgpu\\.cpp$")
 set(BB_VIDEO_CORE_SOURCES ${VIDEO_CORE})
+list(FILTER BB_VIDEO_CORE_SOURCES EXCLUDE REGEX "vk_frame_generation\\.cpp$")
 # The Bloodborne presenter uses its own temporal pipeline; the GOW3 FSR1/RCAS presenter pass
 # is not part of this runtime.
 list(FILTER BB_VIDEO_CORE_SOURCES EXCLUDE REGEX "host_passes/fsr_pass\\.cpp$")
 list(FILTER BB_VIDEO_CORE_SOURCES EXCLUDE REGEX "/fsr411/")
 file(GLOB_RECURSE BB_PORT_SHIM_SOURCES CONFIGURE_DEPENDS
     "${BB_PORT_DIR}/gpu/shim/*.cpp")
-add_library(bbgpu ${SPARTANGPU_KIND} ${BB_VIDEO_CORE_SOURCES} ${RECOMPILER} ${COMMON}
+add_library(bbgpu ${SPARTANGPU_KIND} ${BB_VIDEO_CORE_SOURCES}
+    shadps4/video_core/renderer_vulkan/vk_frame_generation.cpp ${RECOMPILER} ${COMMON}
     ${BB_BASE_SHIM_SOURCES} ${BB_PORT_SHIM_SOURCES}
     "${BB_PORT_DIR}/gpu/bbnet_stub.cpp"
     shadps4/core/libraries/gnmdriver/gnmdriver.cpp

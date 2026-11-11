@@ -3,7 +3,9 @@
 
 #pragma once
 
+#include <array>
 #include <deque>
+#include <memory>
 
 #include <condition_variable>
 
@@ -12,6 +14,9 @@
 #include "video_core/renderer_vulkan/host_passes/fsr_pass.h"
 #endif
 #include "video_core/renderer_vulkan/host_passes/pp_pass.h"
+#ifdef BB_PORT_BUILD
+#include "video_core/renderer_vulkan/vk_frame_generation.h"
+#endif
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
@@ -40,6 +45,15 @@ struct Frame {
     bool is_hdr{false};
     u8 id{};
     vk::Format format{}; ///< spartanport: of `image` (screenshots)
+#ifdef BB_PORT_BUILD
+    struct Generated {
+        VmaAllocation allocation{};
+        vk::Image image{};
+        vk::ImageView view{};
+    };
+    std::array<Generated, FrameGenerator::MaxGenerated> generated{};
+    u32 generated_count{};
+#endif
 };
 
 enum SchedulerType {
@@ -108,6 +122,12 @@ public:
     Frame* PrepareLastFrame();
 
 private:
+#ifdef BB_PORT_BUILD
+    u32 EnsureGenerated(Frame* frame, u32 count);
+    void DestroyGenerated(Frame* frame, u32 from = 0);
+    void ReleaseFrameGen(Frame* frame);
+    bool PresentImage(Frame* frame, vk::Image image, bool last, bool is_reusing_frame);
+#endif
     Frame* GetRenderFrame();
 
     void RecreateFrame(Frame* frame, u32 width, u32 height);
@@ -129,6 +149,9 @@ private:
     HostPasses::PostProcessingPass pp_pass;
     AmdGpu::Liverpool* liverpool;
     Scheduler draw_scheduler;
+#ifdef BB_PORT_BUILD
+    std::unique_ptr<FrameGenerator> frame_generator;
+#endif
     std::deque<u64> recent_frame_ticks; ///< spartanport: SPARTAN_FRAMES_AHEAD bound (PrepareFrame)
     Scheduler present_scheduler;
     Scheduler flip_scheduler;
