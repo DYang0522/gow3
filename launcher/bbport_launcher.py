@@ -156,7 +156,7 @@ def load_ini():
         if "=" in line and not line.lstrip().startswith("#"):
             key, value = line.split("=", 1)
             values[key.strip()] = value.strip()
-    # Old configs may still name an FSR4 backend; keep only supported R9 290X choices.
+    # Legacy or unavailable backend names fall back to the supported FSR 3.1 path.
     if values.get("upscaler") not in {value for _label, value in UPSCALERS}:
         values["upscaler"] = "fsr3"
     return values, lines
