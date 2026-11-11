@@ -268,19 +268,34 @@ typedef struct {
     ChunkBuffer input_control, output_control;
 } Job;
 static int parse_job(const unsigned char *p, uint32_t size, Job *job) {
+    if (!p || !job) return -1;
     memset(job,0,sizeof(*job));
-    for (const unsigned char *end=p+size; p<end;) {
+    const unsigned char *end=p+size;
+    while (p<end) {
+        size_t remaining=(size_t)(end-p);
+        if (remaining<4) return -1;
         uint32_t word; memcpy(&word,p,4);
         switch (ident(word)) {
         case IDENT_CONTROL_FLAGS: case IDENT_RUN_FLAGS: {
+            if (remaining<8) return -1;
             Chunk c; memcpy(&c,p,8);
             job->flags=((uint64_t)payload(c.word)<<32)|c.size; job->have_flags=1; p+=8; break;
         }
-        case IDENT_INPUT_RUN: if (job->input_count==16) return -1; memcpy(&job->inputs[job->input_count++],p,16); p+=16; break;
-        case IDENT_OUTPUT_RUN: if (job->output_count==16) return -1; memcpy(&job->outputs[job->output_count++],p,16); p+=16; break;
-        case IDENT_INPUT_CONTROL: memcpy(&job->input_control,p,16); p+=16; break;
-        case IDENT_OUTPUT_CONTROL: memcpy(&job->output_control,p,16); p+=16; break;
-        case IDENT_RETURN_ADDRESS: p+=16; break;
+        case IDENT_INPUT_RUN:
+            if (remaining<16 || job->input_count==16) return -1;
+            memcpy(&job->inputs[job->input_count++],p,16); p+=16; break;
+        case IDENT_OUTPUT_RUN:
+            if (remaining<16 || job->output_count==16) return -1;
+            memcpy(&job->outputs[job->output_count++],p,16); p+=16; break;
+        case IDENT_INPUT_CONTROL:
+            if (remaining<16) return -1;
+            memcpy(&job->input_control,p,16); p+=16; break;
+        case IDENT_OUTPUT_CONTROL:
+            if (remaining<16) return -1;
+            memcpy(&job->output_control,p,16); p+=16; break;
+        case IDENT_RETURN_ADDRESS:
+            if (remaining<16) return -1;
+            p+=16; break;
         default: return -1;
         }
     }
