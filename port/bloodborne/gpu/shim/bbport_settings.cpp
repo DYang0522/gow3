@@ -41,7 +41,6 @@ constexpr Readout Readouts[] = {
 void Set(Values& v, const std::string& key, const std::string& value) {
     const float f = float(std::atof(value.c_str()));
     const int i = std::atoi(value.c_str());
-    std::fprintf(file, "vsync=%d\n", int(v.vsync.load()));
     for (const Readout& readout : Readouts) {
         if (key == readout.key) {
             v.*readout.member = value != "0";
