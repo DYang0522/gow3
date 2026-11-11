@@ -1,4 +1,5 @@
 /* Narrow, explicit PS4 libc contracts. No automatic success stubs. */
+#define _GNU_SOURCE
 #define _CRT_RAND_S
 #include "runtime.h"
 #include "gpu/bbgpu.h"
@@ -79,7 +80,7 @@ void runtime_set_libc_tls(const void *data, uint64_t filesz, uint64_t memsz) {
 void runtime_thread_tls_cleanup(void) {
     uint64_t *dtv=runtime_thread_dtv();
     for (unsigned i=2;i<TLS_MODULES;++i) {
-        module_tls_free(tls_blocks[i]);
+        if (tls_blocks[i]) module_tls_free(tls_blocks[i]);
         tls_blocks[i]=NULL;
         dtv[i+1]=0;
     }
