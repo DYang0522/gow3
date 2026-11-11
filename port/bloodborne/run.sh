@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd -- "$(dirname -- "$0")"
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+repo_root=$(cd -- "$script_dir/../.." && pwd)
+cd -- "$script_dir"
 if [[ ${1:-} == --software ]]; then
     shift
     if [[ -z ${VK_DRIVER_FILES:-} ]]; then
@@ -21,7 +23,9 @@ mkdir -p "$out"
 export BB_CONFIG=${BB_CONFIG:-$data/bbport.ini}
 if [[ -z ${BB_PREBUILT:-} && -z ${BB_IN_NIX_SHELL:-} ]] && ! { command -v pkg-config >/dev/null && pkg-config --exists vulkan sdl3; } && command -v nix-shell >/dev/null; then
     args=''; if (( $# )); then args=$(printf '%q ' "$@"); fi
-    exec env BB_IN_NIX_SHELL=1 nix-shell shell.nix --run "bash run.sh $args"
+    script_q=$(printf '%q' "$script_dir/run.sh")
+    dir_q=$(printf '%q' "$script_dir")
+    exec env BB_IN_NIX_SHELL=1 nix-shell "$repo_root/shell.nix" --run "cd $dir_q && bash $script_q $args"
 fi
 if [[ -z ${PYTHON:-} ]]; then
     PYTHON=$(command -v python3 || true)
@@ -109,7 +113,7 @@ fps=${BB_FPS:-uncap}
 if [[ $groups != unknown && ,$groups, != *,fps,* ]]; then fps=30; fi
 if [[ -n ${BB_PROBE:-} ]]; then caps=$(dirname -- "$BB_PROBE")/bb-gpu-capabilities
 elif [[ -n ${BB_PREBUILT:-} ]]; then caps=bin/bb-gpu-capabilities
-else caps=out/bb-gpu-capabilities; fi
+else caps="$repo_root/out/bb-gpu-capabilities"; fi
 # bbport.ini output_res other than 1080p (720p for the Steam Deck, 1440p, 2160p): the whole game
 # renders at the preset's size of the output (a patch), the upscaler fills the output, the UI is
 # drawn at the output size. Preset and output changes need a restart.
@@ -170,8 +174,8 @@ fi
 if [[ -n ${BB_PREBUILT:-} ]]; then
     probe=${BB_PROBE:-bin/bb-probe}
 else
-    bash build.sh
-    probe=out/bb-probe
+    bash "$repo_root/build.sh"
+    probe="$repo_root/out/bb-probe"
 fi
 probe_args=("$out/boot-linked.bin" --content-profile "$out/content.bin" --patches "$out/patches.bin" --app0 "$game" --user "${BB_USER_DIR:-$data/user}" --timeout "${BB_TIMEOUT:-0}" "$@")
 if [[ -n ${mod_game:-} ]]; then
