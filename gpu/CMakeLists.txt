@@ -194,10 +194,18 @@ endif()
 # and UI while reusing the R9 290X-compatible renderer and shader recompiler.
 set(BB_PORT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../port/bloodborne")
 set(BB_BASE_SHIM_SOURCES ${SHIM_SOURCES})
+# Keep only GOW3's generic GPU helpers. Game-specific hooks, menus, settings and overlays
+# are supplied by port/bloodborne and must never be linked into the Bloodborne runtime.
+list(FILTER BB_BASE_SHIM_SOURCES EXCLUDE REGEX
+    "spartanport_(actors|orbs|perf_stats|png|overlay|settings|write_log)\\.cpp$")
 list(FILTER BB_BASE_SHIM_SOURCES EXCLUDE REGEX "spartanportgpu\\.cpp$")
+set(BB_VIDEO_CORE_SOURCES ${VIDEO_CORE})
+# The Bloodborne presenter uses its own temporal pipeline; the GOW3 FSR1/RCAS presenter pass
+# is not part of this runtime.
+list(FILTER BB_VIDEO_CORE_SOURCES EXCLUDE REGEX "host_passes/fsr_pass\\.cpp$")
 file(GLOB_RECURSE BB_PORT_SHIM_SOURCES CONFIGURE_DEPENDS
     "${BB_PORT_DIR}/gpu/shim/*.cpp")
-add_library(bbgpu ${SPARTANGPU_KIND} ${VIDEO_CORE} ${RECOMPILER} ${COMMON}
+add_library(bbgpu ${SPARTANGPU_KIND} ${BB_VIDEO_CORE_SOURCES} ${RECOMPILER} ${COMMON}
     ${BB_BASE_SHIM_SOURCES} ${BB_PORT_SHIM_SOURCES}
     "${BB_PORT_DIR}/gpu/bbnet_stub.cpp"
     shadps4/core/libraries/gnmdriver/gnmdriver.cpp
@@ -210,7 +218,6 @@ target_sources(bbgpu PRIVATE third_party/imgui/imgui.cpp third_party/imgui/imgui
     third_party/imgui/backends/imgui_impl_vulkan.cpp)
 target_include_directories(bbgpu PRIVATE third_party/imgui third_party/imgui/backends)
 target_compile_definitions(bbgpu PRIVATE IMGUI_IMPL_VULKAN_NO_PROTOTYPES
-    SPARTAN_FONT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/DejaVuSans.ttf"
     BB_FONT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/DejaVuSans.ttf")
 set_source_files_properties("${BB_PORT_DIR}/gpu/shim/bbport_overlay.cpp" PROPERTIES
     OBJECT_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/DejaVuSans.ttf)

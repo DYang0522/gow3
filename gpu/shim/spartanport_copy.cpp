@@ -13,7 +13,11 @@
 #include <thread>
 #include <vector>
 
+#ifdef BB_PORT_BUILD
+#include "bbport_toggles.h"
+#else
 #include "spartanport_toggles.h"
+#endif
 #include "common/thread.h"
 
 namespace SpartanCopy {
@@ -29,7 +33,11 @@ public:
         // Copies are on the critical path (fences wait for them): normal priority, a quarter
         // of the hardware threads available to the process (Steam Deck 2).
         unsigned count = std::clamp(SpartanThreads::Available() / 4, 1u, 4u);
+#ifdef BB_PORT_BUILD
+        if (const char* env = std::getenv("BB_COPY_THREADS")) {
+#else
         if (const char* env = std::getenv("SPARTAN_COPY_THREADS")) {
+#endif
             count = static_cast<unsigned>(std::clamp(std::atoi(env), 0, 16));
         }
         epochs.emplace_back();
@@ -246,7 +254,11 @@ unsigned long long Yields() {
 }
 
 bool Enabled() {
+#ifdef BB_PORT_BUILD
+    return GetPool().Enabled() && !BbToggle::Disabled(BbToggle::ParallelCopies);
+#else
     return GetPool().Enabled() && !SpartanToggle::Disabled(SpartanToggle::ParallelCopies);
+#endif
 }
 
 void Async(std::function<void()> task) {
