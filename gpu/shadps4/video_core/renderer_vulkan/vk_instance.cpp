@@ -291,6 +291,9 @@ bool Instance::CreateDevice() {
         vk::PhysicalDevicePipelineExecutablePropertiesFeaturesKHR,
         vk::PhysicalDevicePresentIdFeaturesKHR, vk::PhysicalDevicePresentWaitFeaturesKHR>();
     features = feature_chain.get().features;
+    ASSERT_MSG(features.sparseBinding, "Required Vulkan feature unavailable: sparseBinding");
+    ASSERT_MSG(features.sparseResidencyBuffer,
+               "Required Vulkan feature unavailable: sparseResidencyBuffer");
 
     const vk::StructureChain properties_chain = physical_device.getProperties2<
         vk::PhysicalDeviceProperties2, vk::PhysicalDeviceVulkan11Properties,
