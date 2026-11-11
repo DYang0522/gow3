@@ -322,6 +322,8 @@ static void run_job(Context *ctx, uint32_t id, Job *job) {
     if (control && CONTROL_INITIALIZE(f) && control+8<=control_end) { memcpy(in->config,control,4); at9_reset(in); }
     uint64_t in_size=0;
     for (int i=0;i<job->input_count;++i) in_size+=job->inputs[i].size;
+    /* Count RIFF header bytes as consumed input, not just the compressed payload. */
+    uint64_t in_start=in_size;
     unsigned char *joined=NULL;
     const unsigned char *input=NULL;
     if (job->input_count==1) input=job->inputs[0].address;
@@ -332,7 +334,7 @@ static void run_job(Context *ctx, uint32_t id, Job *job) {
         input=joined;
     }
     Output out={job->outputs,job->output_count,0,0};
-    uint64_t in_start=in_size, out_start=output_room(&out);
+    uint64_t out_start=output_room(&out);
     uint32_t frames=0;
     int32_t internal=0;
     if (in_size) for (;;) {
