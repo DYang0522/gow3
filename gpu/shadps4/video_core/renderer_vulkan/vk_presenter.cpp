@@ -48,6 +48,7 @@
 #include <span>
 #include <sstream>
 #include <system_error>
+#include <thread>
 #include <vector>
 #include <vk_mem_alloc.h>
 #ifdef MemoryBarrier
@@ -1174,13 +1175,66 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
     if (window.GetWidth() != swapchain.GetWidth() || window.GetHeight() != swapchain.GetHeight())
         swapchain.Recreate(window.GetWidth(), window.GetHeight());
 
+    // Bloodborne frame pacing: the generated image belongs halfway before this game frame.
+    // Keep one smoothed game-frame interval and drop generated work first when the frame pool is
+    // exhausted; the original game frame must never wait behind an interpolated frame.
+    static auto last_game_present = std::chrono::steady_clock::time_point{};
+    static float game_frame_ms = 16.6f;
+    const auto present_start = std::chrono::steady_clock::now();
+    auto& settings = BbSettings::Get();
+    if (!is_reusing_frame && is_game_frame) {
+        if (last_game_present != std::chrono::steady_clock::time_point{}) {
+            const float elapsed_ms =
+                std::chrono::duration<float, std::milli>(present_start - last_game_present).count();
+            if (elapsed_ms > 1.0f && elapsed_ms < 2000.0f) {
+                game_frame_ms += (elapsed_ms - game_frame_ms) * 0.1f;
+                settings.game_fps.store(1000.0f / game_frame_ms, std::memory_order_relaxed);
+            } else {
+                settings.game_fps.store(0.0f, std::memory_order_relaxed);
+            }
+        }
+        last_game_present = present_start;
+    }
+
+    const auto behind = [this] {
+        std::scoped_lock lock{free_mutex};
+        return free_queue.empty();
+    };
+    u32 generated = (!is_reusing_frame && frame_generator && frame_generator->Wanted())
+                        ? frame->generated_count
+                        : 0u;
+    if (generated && behind()) {
+        generated = 0;
+    }
+    const auto step = std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+        std::chrono::duration<double, std::milli>(game_frame_ms / (generated + 1)));
+    const auto wait_until = [](std::chrono::steady_clock::time_point at) {
+        constexpr auto spin = std::chrono::microseconds(1500);
+        const auto now = std::chrono::steady_clock::now();
+        if (at - now > spin) {
+            std::this_thread::sleep_for(at - now - spin);
+        }
+        while (std::chrono::steady_clock::now() < at) {
+            std::this_thread::yield();
+        }
+    };
+
     u32 generated_shown = 0;
-    if (!is_reusing_frame && frame_generator && frame_generator->Wanted()) {
-        for (u32 i = 0; i < frame->generated_count; ++i) {
-            if (!PresentImage(frame, frame->generated[i].image, false, false)) break;
-            ++generated_shown;
+    for (; generated_shown < generated; ++generated_shown) {
+        if (generated_shown > 0) {
+            if (behind()) {
+                break;
+            }
+            wait_until(present_start + step * generated_shown);
+        }
+        if (!PresentImage(frame, frame->generated[generated_shown].image, false, false)) {
+            break;
         }
     }
+    if (generated_shown && !behind()) {
+        wait_until(present_start + step * generated_shown);
+    }
+
     const bool presented = PresentImage(frame, frame->image, true, is_reusing_frame);
     if (!presented) {
         if (generated_shown) present_scheduler.Finish();
@@ -1189,22 +1243,6 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
     }
 
     if (!is_reusing_frame && is_game_frame) {
-        auto& settings = BbSettings::Get();
-        static auto last_game_frame = std::chrono::steady_clock::time_point{};
-        const auto now = std::chrono::steady_clock::now();
-        if (last_game_frame != std::chrono::steady_clock::time_point{}) {
-            const float elapsed_ms =
-                std::chrono::duration<float, std::milli>(now - last_game_frame).count();
-            if (elapsed_ms > 1.0f && elapsed_ms < 2000.0f) {
-                const float fps = 1000.0f / elapsed_ms;
-                const float previous = settings.game_fps.load(std::memory_order_relaxed);
-                settings.game_fps.store(previous > 0.0f ? previous + (fps - previous) * 0.2f : fps,
-                                        std::memory_order_relaxed);
-            } else {
-                settings.game_fps.store(0.0f, std::memory_order_relaxed);
-            }
-        }
-        last_game_frame = now;
         settings.frame_gen_now.store(int(generated_shown), std::memory_order_relaxed);
         DebugState.IncFlipFrameNum();
     }
