@@ -39,6 +39,16 @@ void runtime_set_module_tls(uint64_t module, const void *data, uint64_t filesz, 
     tls_modules[module].data=data; tls_modules[module].filesz=filesz; tls_modules[module].memsz=memsz;
 }
 void runtime_set_libc_tls(const void *data, uint64_t filesz, uint64_t memsz) { runtime_set_module_tls(2,data,filesz,memsz); }
+/* Dynamic module TLS is allocated lazily per host/guest thread. Release it when
+ * a guest-created thread exits so short-lived worker threads do not leak one block
+ * per module for the lifetime of the process. */
+void runtime_thread_tls_cleanup(void) {
+    for (unsigned i=2;i<TLS_MODULES;++i) {
+        free(tls_blocks[i]);
+        tls_blocks[i]=NULL;
+    }
+}
+
 static ABI void *guest_tls_get_addr(const uint64_t *index) {
     if (!index || index[0]<2 || index[0]>=TLS_MODULES || !tls_modules[index[0]].data || index[1]>=tls_modules[index[0]].memsz) {
         fputs("STOP: unsupported TLS module/offset\n",stderr); exit(21);
