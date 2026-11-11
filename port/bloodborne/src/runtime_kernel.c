@@ -250,13 +250,16 @@ static ABI int32_t thread_once(int32_t *once,void (ABI *routine)(void)) {
 static ABI int32_t posix_once(int32_t *once,void (ABI *routine)(void)) { return thread_once(once,routine) ? 22 : 0; }
 #define KEYS 256
 typedef void (ABI *KeyDestructor)(void *);
-static struct { int used; KeyDestructor destructor; } keys[KEYS];
+typedef struct { int used; uint64_t generation; KeyDestructor destructor; } Key;
+typedef struct { void *value; uint64_t generation; } ThreadKeyValue;
+static Key keys[KEYS];
 static pthread_mutex_t key_lock=PTHREAD_MUTEX_INITIALIZER;
-static _Thread_local void *key_values[KEYS];
+static _Thread_local ThreadKeyValue key_values[KEYS];
 static ABI int32_t key_create(uint32_t *key,KeyDestructor destructor) {
     if (!key) return ERR(22);
     pthread_mutex_lock(&key_lock);
     for (uint32_t i=1;i<KEYS;++i) if (!keys[i].used) {
+        if (++keys[i].generation==0) ++keys[i].generation;
         keys[i].used=1; keys[i].destructor=destructor;
         pthread_mutex_unlock(&key_lock);
         *key=i; return 0;
@@ -268,23 +271,46 @@ static ABI int32_t key_delete(uint32_t key) {
     if (!key || key>=KEYS) return ERR(22);
     pthread_mutex_lock(&key_lock);
     int32_t r=keys[key].used ? 0 : ERR(22);
-    keys[key].used=0; keys[key].destructor=NULL;
+    if (!r) {
+        keys[key].used=0; keys[key].destructor=NULL;
+        if (++keys[key].generation==0) ++keys[key].generation;
+    }
     pthread_mutex_unlock(&key_lock);
     return r;
 }
 static ABI int32_t key_set(uint32_t key,void *value) {
-    if (!key || key>=KEYS || !keys[key].used) return ERR(22);
-    key_values[key]=value; return 0;
+    if (!key || key>=KEYS) return ERR(22);
+    pthread_mutex_lock(&key_lock);
+    if (!keys[key].used) { pthread_mutex_unlock(&key_lock); return ERR(22); }
+    key_values[key].value=value;
+    key_values[key].generation=keys[key].generation;
+    pthread_mutex_unlock(&key_lock);
+    return 0;
 }
-static ABI void *key_get(uint32_t key) { return key && key<KEYS ? key_values[key] : NULL; }
+static ABI void *key_get(uint32_t key) {
+    if (!key || key>=KEYS) return NULL;
+    pthread_mutex_lock(&key_lock);
+    void *value=keys[key].used && key_values[key].generation==keys[key].generation
+        ? key_values[key].value : NULL;
+    pthread_mutex_unlock(&key_lock);
+    return value;
+}
 void runtime_thread_keys_cleanup(void) {
     for (int round=0;round<4;++round) {
         int any=0;
         for (uint32_t i=1;i<KEYS;++i) {
-            void *value=key_values[i];
-            if (!value || !keys[i].used || !keys[i].destructor) continue;
-            key_values[i]=NULL; any=1;
-            keys[i].destructor(value);
+            pthread_mutex_lock(&key_lock);
+            void *value=NULL;
+            KeyDestructor destructor=NULL;
+            if (keys[i].used && key_values[i].generation==keys[i].generation) {
+                value=key_values[i].value;
+                destructor=keys[i].destructor;
+                if (value && destructor) key_values[i].value=NULL;
+            }
+            pthread_mutex_unlock(&key_lock);
+            if (!value || !destructor) continue;
+            any=1;
+            destructor(value);
         }
         if (!any) break;
     }
