@@ -507,6 +507,7 @@ static int direct_range_allocated(uint64_t phys, uint64_t size) {
 /* POSIX mmap uses the PS4 flexible-memory pool; file-backed mappings are copied in. */
 static int32_t map_flexible_locked(void **inout,uint64_t size,int prot,int flags);
 static ABI int32_t direct_unmap(void *address,uint64_t size);
+static ABI int32_t direct_protect(void *address,uint64_t size,int prot);
 #define GUEST_MAP_FIXED 0x0010
 #define GUEST_MAP_ANON  0x1000
 #define GUEST_MAP_FAILED ((void *)(intptr_t)-1)
@@ -527,10 +528,11 @@ static ABI void *posix_mmap(void *address,uint64_t length,int prot,int flags,int
     if (size<length) { *runtime_errno()=ENOMEM; return GUEST_MAP_FAILED; }
     int anonymous=(flags&GUEST_MAP_ANON)!=0;
     if (!anonymous && fd<0) { *runtime_errno()=EBADF; return GUEST_MAP_FAILED; }
+    int map_prot=anonymous ? prot : (prot|2);
     void *mapped=address;
     int map_flags=(flags&GUEST_MAP_FIXED) ? MAP_FIXED_FLAG : 0;
     write_lock();
-    int32_t result=map_flexible_locked(&mapped,size,prot,map_flags);
+    int32_t result=map_flexible_locked(&mapped,size,map_prot,map_flags);
     write_unlock();
     flush_hooks();
     if (result) { *runtime_errno()=posix_memory_errno(result); return GUEST_MAP_FAILED; }
@@ -543,6 +545,14 @@ static ABI void *posix_mmap(void *address,uint64_t length,int prot,int flags,int
             return GUEST_MAP_FAILED;
         }
         if ((uint64_t)got<length) memset((unsigned char *)mapped+got,0,(size_t)(length-(uint64_t)got));
+        if (map_prot!=prot) {
+            int32_t protect_result=direct_protect(mapped,size,prot);
+            if (protect_result) {
+                direct_unmap(mapped,size);
+                *runtime_errno()=posix_memory_errno(protect_result);
+                return GUEST_MAP_FAILED;
+            }
+        }
     }
     return mapped;
 }
