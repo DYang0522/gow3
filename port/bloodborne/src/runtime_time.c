@@ -11,7 +11,7 @@ typedef struct { int32_t minuteswest, dsttime; } GuestTimezone;
 static ABI int guest_gettimeofday(GuestTimeval *value,GuestTimezone *zone) {
     struct timeval t;
 #ifdef _WIN32
-    if (gettimeofday(&t,NULL)) { *runtime_errno()=errno; return -1; }
+    if (gettimeofday(&t,NULL)) { *runtime_errno()=runtime_guest_errno(errno); return -1; }
     if (zone) { zone->minuteswest=(int32_t)(-compat_utc_offset((time_t)t.tv_sec)/60); zone->dsttime=0; }
 #else
     struct timezone z;
