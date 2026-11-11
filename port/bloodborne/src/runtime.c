@@ -151,6 +151,10 @@ void runtime_finalize(void *dso) {
     }
 }
 static ABI void guest_finalize(void *dso) { runtime_finalize(dso); }
+/* PS4 libc exposes these standard streams as imports; provide data and callable forms. */
+static ABI void *guest_stderr(void) { return stderr; }
+static ABI void *guest_stdin(void) { return stdin; }
+static ABI void *guest_stdout(void) { return stdout; }
 static _Atomic uint32_t next_guard_owner=1;
 static _Thread_local uint32_t guard_owner;
 static ABI int guard_acquire(uint64_t *guard) {
@@ -210,6 +214,9 @@ uintptr_t runtime_resolve(const char *name, int is_data) {
         if (!strcmp(name, "P330P3dFF68#q#q")) return (uintptr_t)&need_libc;
         if (!strcmp(name, "ZT4ODD2Ts9o#libSceLibcInternal")) return (uintptr_t)&need_libc_internal;
         if (!strcmp(name, "djxxOmW6-aw#p#J")) return (uintptr_t)&guest_progname;
+        if (!strcmp(name, "H8AprKeZtNg#q#q")) return (uintptr_t)&stderr;
+        if (!strcmp(name, "1TDo-ImqkJc#q#q")) return (uintptr_t)&stdin;
+        if (!strcmp(name, "2sWzhYqFH4E#q#q")) return (uintptr_t)&stdout;
         return 0;
     }
     /* Exact scoped imports for CUSA03173; the suffix identifies library/module. */
@@ -217,6 +224,9 @@ uintptr_t runtime_resolve(const char *name, int is_data) {
     if (!strcmp(name, "8G2LB+A3rzg#q#q")) return (uintptr_t)guest_atexit;
     if (!strcmp(name, "tsvEmnenz48#q#q")) return (uintptr_t)guest_cxa_atexit;
     if (!strcmp(name, "kbw4UHHSYy0#p#J")) return (uintptr_t)guest_finalize;
+    if (!strcmp(name, "H8AprKeZtNg#q#q")) return (uintptr_t)guest_stderr;
+    if (!strcmp(name, "1TDo-ImqkJc#q#q")) return (uintptr_t)guest_stdin;
+    if (!strcmp(name, "2sWzhYqFH4E#q#q")) return (uintptr_t)guest_stdout;
     if (!strcmp(name, "uMei1W9uyNo#q#q")) return (uintptr_t)guest_libc_exit;
     /* Not imported by the current eboot, exposed for ABI tests/future use. */
     if (!strcmp(name, "H2e8t5ScQGc#q#q")) return (uintptr_t)guest_finalize;
