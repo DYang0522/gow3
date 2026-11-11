@@ -268,6 +268,7 @@ bool Instance::CreateDevice() {
         vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan11Features,
         vk::PhysicalDeviceVulkan12Features, vk::PhysicalDeviceVulkan13Features,
         vk::PhysicalDeviceRobustness2FeaturesEXT,
+        vk::PhysicalDeviceVertexAttributeDivisorFeatures,
         vk::PhysicalDeviceExtendedDynamicState3FeaturesEXT,
         vk::PhysicalDevicePrimitiveTopologyListRestartFeaturesEXT,
         vk::PhysicalDeviceShaderAtomicFloat2FeaturesEXT,
@@ -330,6 +331,10 @@ bool Instance::CreateDevice() {
                "Required Vulkan feature unavailable: robustImageAccess2");
     ASSERT_MSG(robustness2_features.nullDescriptor,
                "Required Vulkan feature unavailable: nullDescriptor");
+    const auto divisor_features =
+        feature_chain.get<vk::PhysicalDeviceVertexAttributeDivisorFeatures>();
+    ASSERT_MSG(divisor_features.vertexAttributeInstanceRateDivisor,
+               "Required Vulkan feature unavailable: vertexAttributeInstanceRateDivisor");
 
     // Optional
     maintenance_5 = add_extension(VK_KHR_MAINTENANCE_5_EXTENSION_NAME);
@@ -630,7 +635,7 @@ bool Instance::CreateDevice() {
             .provokingVertexLast = true,
         },
         vk::PhysicalDeviceVertexAttributeDivisorFeatures{
-            .vertexAttributeInstanceRateDivisor = true,
+            .vertexAttributeInstanceRateDivisor = divisor_features.vertexAttributeInstanceRateDivisor,
         },
         vk::PhysicalDeviceMaintenance5FeaturesKHR{
             .maintenance5 = true,
