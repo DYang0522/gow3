@@ -126,9 +126,12 @@ void runtime_file_configure(const char *app0,const char *user) {
 /* Resolve a guest path to a host path; returns 0 or a host errno. */
 static int translate(const char *guest,char *out,size_t size) {
     if (!guest || !*guest) return ENOENT;
+    if (!out || !size) return EINVAL;
     char buffer[1024];
-    if (guest[0]!='/') snprintf(buffer,sizeof(buffer),"/app0/%s",guest);
-    else snprintf(buffer,sizeof(buffer),"%s",guest);
+    int length=guest[0]!='/'
+        ? snprintf(buffer,sizeof(buffer),"/app0/%s",guest)
+        : snprintf(buffer,sizeof(buffer),"%s",guest);
+    if (length<0 || (size_t)length>=sizeof(buffer)) return ENAMETOOLONG;
     for (const char *p=buffer;(p=strstr(p,".."));p+=2)
         if ((p==buffer || p[-1]=='/') && (p[2]==0 || p[2]=='/')) return EACCES;
     pthread_mutex_lock(&lock);
