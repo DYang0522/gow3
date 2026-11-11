@@ -7,6 +7,9 @@
 #include <cstring>
 
 #include "spartanport_toggles.h"
+#ifdef BB_PORT_BUILD
+#include "bbport_settings.h"
+#endif
 
 #include "video_core/host_shaders/camera_motion_comp.h"
 #include "video_core/host_shaders/camera_motion_debug_comp.h"
@@ -51,12 +54,18 @@ std::array<float, 12> Multiply(const std::array<float, 12>& a, const std::array<
 CameraMotion::CameraMotion(const Instance& instance_, Scheduler& scheduler_,
                            VideoCore::TextureCache& texture_cache_, Runtime& runtime_)
     : instance{instance_}, scheduler{scheduler_}, texture_cache{texture_cache_}, runtime{runtime_} {
+#ifdef BB_PORT_BUILD
+    const char* debug = std::getenv("BB_DEBUG_MOTION");
+    debug_overlay = debug && debug[0] == '1';
+    const char* upscaler = std::getenv("BB_UPSCALER");
+    const bool upscale_tracking = !(upscaler && std::strcmp(upscaler, "none") == 0);
+    for_upscaler = upscale_tracking || BbSettings::Get().frame_gen == BbSettings::FrameGenFsr3;
+#else
     const char* env = std::getenv("SPARTAN_DEBUG_MOTION");
     debug_overlay = env && env[0] == '1';
     const char* upscaler = std::getenv("SPARTAN_UPSCALER");
-    // The upscaler can be switched on from the menu at any time: the camera is always tracked
-    // unless SPARTAN_UPSCALER=none.
     for_upscaler = !(upscaler && std::strcmp(upscaler, "none") == 0);
+#endif
     const auto device = instance.GetDevice();
     if (for_upscaler) {
         const std::array<vk::DescriptorSetLayoutBinding, 3> motion_bindings = {{
