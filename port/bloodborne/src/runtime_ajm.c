@@ -328,9 +328,16 @@ static void run_job(Context *ctx, uint32_t id, Job *job) {
     const unsigned char *input=NULL;
     if (job->input_count==1) input=job->inputs[0].address;
     else if (job->input_count>1) {
-        joined=malloc(in_size ? in_size : 1);
+        joined=malloc(in_size ? (size_t)in_size : 1);
+        if (!joined) {
+            if (result) result->result=ERR_OUT_OF_RESOURCES;
+            return;
+        }
         uint64_t at=0;
-        for (int i=0;i<job->input_count;++i) { memcpy(joined+at,job->inputs[i].address,job->inputs[i].size); at+=job->inputs[i].size; }
+        for (int i=0;i<job->input_count;++i) {
+            memcpy(joined+at,job->inputs[i].address,job->inputs[i].size);
+            at+=job->inputs[i].size;
+        }
         input=joined;
     }
     Output out={job->outputs,job->output_count,0,0};
