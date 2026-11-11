@@ -10,6 +10,8 @@
 
 #include <magic_enum/magic_enum.hpp>
 
+extern "C" void runtime_thread_attach_host(const char* name);
+
 namespace Libraries::AvPlayer {
 
 void PS4_SYSV_ABI AvPlayerState::AutoPlayEventCallback(void* opaque, AvPlayerEvents event_id,
@@ -233,6 +235,7 @@ void AvPlayerState::SetAvSyncMode(AvPlayerAvSyncMode sync_mode) {
 
 void AvPlayerState::AvControllerThread(std::stop_token stop) {
     using std::chrono::milliseconds;
+    runtime_thread_attach_host("avplayer");
     Common::SetCurrentThreadName("shadPS4:AvController");
 
     while (!stop.stop_requested()) {
