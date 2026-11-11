@@ -199,6 +199,33 @@ static ABI __attribute__((noreturn)) void guest_libc_exit(int status) {
     runtime_report();
     exit(status);
 }
+static const void *ctype_tables[3];
+static ABI const void *guest_getpctype(void) { return ctype_tables[0]; }
+static ABI const void *guest_getptolower(void) { return ctype_tables[1]; }
+static ABI const void *guest_getptoupper(void) { return ctype_tables[2]; }
+static const void *lea_rip_ret_target(uintptr_t code) {
+    const uint8_t *p=(const uint8_t *)code;
+    if (p[0]!=0x48 || p[1]!=0x8d || p[2]!=0x05 || p[7]!=0xc3) return NULL;
+    int32_t displacement;
+    memcpy(&displacement,p+3,4);
+    return (const void *)(code+7+(uintptr_t)(intptr_t)displacement);
+}
+uintptr_t runtime_resolve_native(const char *name,int is_data,uintptr_t native) {
+    static const struct { const char *nid; unsigned slot; } tables[]={
+        {"sUP1hBaouOw#q#q",0}, {"1uJgoVq3bQU#q#q",1}, {"rcQCUr0EaRU#q#q",2}
+    };
+    if (is_data || !native || !(capabilities&1)) return 0;
+    for (size_t i=0;i<sizeof(tables)/sizeof(*tables);++i) {
+        if (strcmp(name,tables[i].nid)) continue;
+        const void *table=lea_rip_ret_target(native);
+        if (!table) return 0;
+        ctype_tables[tables[i].slot]=table;
+        return (uintptr_t)(tables[i].slot==0 ? guest_getpctype :
+                           tables[i].slot==1 ? guest_getptolower : guest_getptoupper);
+    }
+    return 0;
+}
+
 uintptr_t runtime_resolve(const char *name, int is_data) {
     if (!(capabilities & 1)) return 0;
     if (is_data) {
