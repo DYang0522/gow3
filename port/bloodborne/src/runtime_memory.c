@@ -518,7 +518,7 @@ static int posix_memory_errno(int32_t result) {
     case 12: return ENOMEM;
     case 13: return EACCES;
     case 22: return EINVAL;
-    case 35: return ENOSPC;
+    case 35: return 35; /* FreeBSD EAGAIN */
     default: return ENOMEM;
     }
 }
@@ -531,7 +531,10 @@ static ABI void *posix_mmap(void *address,uint64_t length,int prot,int flags,int
     uint64_t size=align_up(length,PAGE);
     if (size<length) { *runtime_errno()=ENOMEM; return GUEST_MAP_FAILED; }
     int anonymous=(flags&GUEST_MAP_ANON)!=0;
-    if (!anonymous && fd<0) { *runtime_errno()=EBADF; return GUEST_MAP_FAILED; }
+    if (!anonymous && fd<0) { *runtime_errno()=9; return GUEST_MAP_FAILED; }
+    /* File-backed MAP_SHARED must write changes back to the original descriptor.
+       This runtime currently implements file-backed snapshots (MAP_PRIVATE) only. */
+    if (!anonymous && sharing==GUEST_MAP_SHARED) { *runtime_errno()=45; return GUEST_MAP_FAILED; }
     int map_prot=anonymous ? prot : (prot|2);
     void *mapped=address;
     int map_flags=(flags&GUEST_MAP_FIXED) ? MAP_FIXED_FLAG : 0;
@@ -543,6 +546,7 @@ static ABI void *posix_mmap(void *address,uint64_t length,int prot,int flags,int
     if (!anonymous) {
         int64_t got=runtime_file_pread(fd,mapped,length,offset);
         if (got<0) {
+            *runtime_errno()=runtime_guest_errno((int)-got);
             int error=*runtime_errno();
             direct_unmap(mapped,size);
             *runtime_errno()=error;
