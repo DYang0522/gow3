@@ -890,25 +890,41 @@ uintptr_t runtime_memory_resolve(const char *name) {
 #define LOW_MIN UINT64_C(0x0800000000)
 static uintptr_t low_next=LOW_MIN;
 void *runtime_low_map(size_t size, int prot) {
+    if (!size) return NULL;
     size=align_up(size,PAGE);
+#ifdef _WIN32
+    /* VirtualAlloc requires 64 KiB allocation-granularity addresses, unlike POSIX mmap. */
+    size=(size+UINT64_C(65535))&~(size_t)UINT64_C(65535);
+#endif
     write_lock();
 #ifdef _WIN32
     void *p=NULL;
-    while (!p && low_next+size<=USER_MIN) {
+    while (low_next<=USER_MIN && size<=USER_MIN-low_next) {
         p=VirtualAlloc((void *)low_next,size,MEM_RESERVE|MEM_COMMIT,win_prot(prot));
-        low_next+=size+UINT64_C(65536); /* unmapped gap catches overruns; allocation granularity */
+        low_next+=size+UINT64_C(65536); /* allocation-granularity-sized unmapped guard */
+        if (p) break;
     }
     write_unlock();
     return p;
 #else
     void *p=MAP_FAILED;
-    while (low_next+size<=USER_MIN) {
+    while (low_next<=USER_MIN && size<=USER_MIN-low_next) {
         p=mmap((void *)low_next,size,prot,MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED_NOREPLACE,-1,0);
-        low_next+=size+PAGE; /* unmapped gap catches overruns */
+        low_next+=size+PAGE; /* unmapped guard page */
         if (p!=MAP_FAILED) break;
     }
     write_unlock();
     return p==MAP_FAILED ? NULL : p;
+#endif
+}
+void runtime_low_unmap(void *address,size_t size) {
+    if (!address || !size) return;
+#ifdef _WIN32
+    (void)size;
+    VirtualFree(address,0,MEM_RELEASE);
+#else
+    size=align_up(size,PAGE);
+    munmap(address,size);
 #endif
 }
 /* ---- GPU library interface (gpu/shim/bbgpu.cpp) ---- */
