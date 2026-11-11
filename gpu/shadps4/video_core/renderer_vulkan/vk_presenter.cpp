@@ -723,7 +723,10 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     // Keep one guest frame queued on the Bloodborne path; SpartanPort's adjustable queue
     // setting belongs to the GOW3-specific settings layer.
 #ifdef BB_PORT_BUILD
-    constexpr u32 frames_ahead = 1;
+    static const u32 frames_ahead = [] {
+        const char* env = std::getenv("BB_FRAMES_AHEAD");
+        return env ? u32(std::max(0, std::atoi(env))) : 1u;
+    }();
 #else
     const u32 frames_ahead = u32(std::max(0, SpartanSettings::Get().frames_queued.load()));
 #endif

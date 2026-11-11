@@ -635,6 +635,7 @@ def main():
     env.setdefault('BB_CONFIG', str(data / 'bbport.ini'))
     config = env['BB_CONFIG']
     refresh_shared_graphics(env, config)
+    env.setdefault('BB_FSR4_DIR', str((data / 'fsr4_shaders').resolve()))
 
     probe = Path(env['BB_PROBE']) if env.get('BB_PROBE') else find_executable('bb-probe.exe')
     if not probe or not probe.is_file():

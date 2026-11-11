@@ -65,7 +65,11 @@ FfxVkPortableImage Describe(vk::Image image, vk::Format format, u32 width, u32 h
 /// <dir>/fNNN_<name>_<w>x<h>_<format>.raw, for checking temporal stability offline.
 /// Returns the frame number to dump, or -1.
 int DumpFrame() {
+#ifdef BB_PORT_BUILD
+    static const char* trigger = std::getenv("BB_DUMP_TRIGGER");
+#else
     static const char* trigger = std::getenv("SPARTAN_DUMP_TRIGGER");
+#endif
     static int remaining = 0, index = 0, polls = 0;
     if (!trigger) {
         return -1;
@@ -74,7 +78,11 @@ int DumpFrame() {
         if (++polls % 30 != 0 || std::remove(trigger) != 0) {
             return -1;
         }
+#ifdef BB_PORT_BUILD
+        const char* frames = std::getenv("BB_DUMP_FRAMES");
+#else
         const char* frames = std::getenv("SPARTAN_DUMP_FRAMES");
+#endif
         remaining = frames ? std::max(1, std::atoi(frames)) : 8;
         index = 0;
     }
@@ -95,7 +103,11 @@ struct DumpImage {
 void DumpImages(const Instance& instance, Scheduler& scheduler, vk::CommandBuffer cmdbuf,
                 int frame, std::initializer_list<DumpImage> images) {
     static const std::string dir = [] {
+#ifdef BB_PORT_BUILD
+        const char* env = std::getenv("BB_DUMP_DIR");
+#else
         const char* env = std::getenv("SPARTAN_DUMP_DIR");
+#endif
         return std::string{env && env[0] ? env : "out/dump"};
     }();
     const vk::MemoryBarrier2 before{
@@ -187,11 +199,21 @@ TemporalUpscaler::TemporalUpscaler(const Instance& instance_, Scheduler& schedul
         PortSettings::ConfigureDlssSupport(dlss && dlss->Available(), problem.c_str());
     }
 #ifdef BB_PORT_BUILD
-    // Bloodborne has no GOW3 shader-hash triggers. Its patched startup resolution is BB_RENDER_RES.
-    enabled = true;
-    trigger_hash = 0;
-    ui_trigger_vs = 0;
-    scaled_session = PortSettings::FixedRenderSession();
+    // Bloodborne uses its own shader hooks and startup-patched render/output dimensions.
+    const char* env = std::getenv("BB_UPSCALER");
+    enabled = !(env && std::strcmp(env, "none") == 0);
+    if (const char* hash = std::getenv("BB_UPSCALE_BEFORE_CS"))
+        trigger_hash = std::strtoull(hash, nullptr, 16);
+    if (const char* hash = std::getenv("BB_UI_TRIGGER_VS"))
+        ui_trigger_vs = std::strtoull(hash, nullptr, 16);
+    if (const char* res = std::getenv("BB_OUTPUT_RES")) {
+        u32 w = 0, h = 0;
+        if (std::sscanf(res, "%ux%u", &w, &h) == 2 && w && h) {
+            target_width = w;
+            target_height = h;
+        }
+    }
+    scaled_session = std::getenv("BB_RENDER_RES") && std::getenv("BB_RENDER_RES")[0];
     const char* render_res = std::getenv("BB_RENDER_RES");
 #else
     // Available unless SPARTAN_UPSCALER=none; on/off and the parameters are the menu's settings.
@@ -299,9 +321,11 @@ bool TemporalUpscaler::RasterScaling() const {
 }
 
 bool TemporalUpscaler::OnFrameStart() {
-#ifndef BB_PORT_BUILD
-    // SPARTAN_PRESET_FILE is a GOW3-side test hook, not a Bloodborne settings source.
+#ifdef BB_PORT_BUILD
+    static const char* preset_file = std::getenv("BB_PRESET_FILE");
+#else
     static const char* preset_file = std::getenv("SPARTAN_PRESET_FILE");
+#endif
     if (preset_file && ++preset_file_frames % 64 == 0) {
         if (FILE* f = std::fopen(preset_file, "r")) {
             int value = 0;
@@ -317,7 +341,6 @@ bool TemporalUpscaler::OnFrameStart() {
             std::fclose(f);
         }
     }
-#endif
     const auto& settings = PortSettings::Get();
     // The guest's startup resolution patch remains in effect until restart. Keep the FSR
     // model at the applied preset while the menu saves the requested one for run.sh.
