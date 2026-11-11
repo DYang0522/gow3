@@ -94,10 +94,6 @@ void Set(Values& v, const std::string& key, const std::string& value) {
                          : value == "xbox"        ? PromptsXbox
                          : value == "switch"      ? PromptsSwitch
                                                   : PromptsAuto;
-    } else if (key == "fsr4_auto_exposure") {
-        v.fsr4_auto_exposure = i != 0;
-    } else if (key == "fsr4_invert_jitter") {
-        v.fsr4_invert_jitter = i != 0;
     } else if (key == "model_lod") {
         v.model_lod = std::clamp(i, -2, 2);
     } else if (key == "live_resolution") {
@@ -165,7 +161,8 @@ void Load() {
     }
     // Environment overrides (scripts, A/B tests).
     if (const char* env = std::getenv("BB_UPSCALER")) {
-        v.upscaler = (!std::strcmp(env, "fsr411") || !std::strcmp(env, "fsr412"))
+        v.upscaler = (!std::strcmp(env, "fsr4") || !std::strcmp(env, "fsr411") ||
+                       !std::strcmp(env, "fsr412") || !std::strcmp(env, "dlss"))
                          ? UpscalerFsr3 : UpscalerOff;
         for (int u = 0; u < UpscalerCount; ++u) {
             if (std::strcmp(env, UpscalerName(u)) == 0) v.upscaler = u;
@@ -183,13 +180,6 @@ void Load() {
         if (const char* value = std::getenv(env)) {
             Set(v, key, value);
         }
-    }
-    // This Bloodborne target is the R9 290X Vulkan port: only FSR 3.1 and TAA are exposed.
-    // Migrate old bbport.ini / environment choices rather than leaving an unsupported provider
-    // selected and relying on the renderer to discover it later.
-    if (v.upscaler == UpscalerFsr4 || v.upscaler == UpscalerDlss) {
-        std::printf("Settings: unsupported FSR4/DLSS choice changed to FSR 3.1 on this build\\n");
-        v.upscaler = UpscalerFsr3;
     }
     // Direct engine launches retain the object-motion cache override.
     const char* shared = std::getenv("BB_SHARED_GRAPHICS_CONFIG");
@@ -214,18 +204,6 @@ void Load() {
     v.startup_live_resolution = v.live_resolution;
 }
 
-void ConfigureUpscalerSupport(bool fsr4) {
-    auto& v = Get();
-    v.fsr4_supported = fsr4;
-    if (v.upscaler == UpscalerFsr4 && !fsr4) {
-        static constexpr const char* problem = "GPU/driver does not support the FSR 4 INT8 shaders";
-        std::printf("Upscaler: FSR 4 unavailable: %s; falling back to FSR 3.1 before the first frame\n",
-                    problem);
-        v.fsr4_problem = problem;
-        v.upscaler = UpscalerFsr3;
-    }
-}
-
 void SelectFrameGen(int provider) {
     auto& v = Get();
     v.frame_gen = provider == FrameGenFsr3 ? FrameGenFsr3 : FrameGenOff;
@@ -238,19 +216,6 @@ void FrameGenFailure(const char* problem) {
     kept = problem ? problem : "FSR 3.1 frame generation failed.";
     v.frame_gen_problem = kept.c_str();
     v.frame_gen = FrameGenOff;
-}
-
-void ConfigureDlssSupport(bool available, const char* problem) {
-    auto& v = Get();
-    v.dlss_supported = available;
-    static std::string kept;
-    kept = problem ? problem : "";
-    v.dlss_problem = available || kept.empty() ? nullptr : kept.c_str();
-    if (v.upscaler == UpscalerDlss && !available) {
-        std::printf("Upscaler: DLSS unavailable (%s); falling back to FSR 3.1\n",
-                    kept.empty() ? "DLSS bridge or nvngx_dlss.dll missing" : kept.c_str());
-        v.upscaler = UpscalerFsr3;
-    }
 }
 
 bool FixedRenderSession() {
@@ -278,8 +243,8 @@ bool ResolutionNeedsRestart() {
 
 bool FsrSettingsNeedRestart() {
     const auto& v = Get();
-    const bool fsr_now = v.upscaler == UpscalerFsr3 || IsFsr4(v.upscaler);
-    const bool fsr_start = v.startup_upscaler == UpscalerFsr3 || IsFsr4(v.startup_upscaler);
+    const bool fsr_now = v.upscaler == UpscalerFsr3;
+    const bool fsr_start = v.startup_upscaler == UpscalerFsr3;
     return v.object_motion_cache != v.startup_object_motion_cache ||
         (v.object_motion_cache &&
          (fsr_now && v.object_motion) != (fsr_start && v.startup_object_motion));
@@ -296,13 +261,12 @@ void Save() {
                  "# bbport settings (in-game menu: Insert / L3+R3)\n"
                  "upscaler=%s\npreset=%d\nsharpen=%d\nsharpness=%.2f\njitter=%d\n"
                  "reactive=%d\nobject_motion=%d\nreactive_scale=%.2f\nreactive_threshold=%.2f\nreactive_max=%.2f\n"
-                 "debug_view=%d\nfsr4_auto_exposure=%d\nfsr4_invert_jitter=%d\n",
+                 "debug_view=%d\n",
                  UpscalerName(v.upscaler), v.preset.load(), int(v.sharpen.load()),
                  v.sharpness.load(), int(v.jitter.load()), int(v.reactive.load()),
                  int(v.object_motion.load()),
                  v.reactive_scale.load(), v.reactive_threshold.load(), v.reactive_max.load(),
-                 v.debug_view.load(), int(v.fsr4_auto_exposure.load()),
-                 int(v.fsr4_invert_jitter.load()));
+                 v.debug_view.load());
     for (const Readout& readout : Readouts) {
         std::fprintf(file, "%s=%d\n", readout.key, int((v.*readout.member).load()));
     }
@@ -354,7 +318,7 @@ const char* FrameGenName(int frame_gen) {
 }
 
 const char* UpscalerName(int upscaler) {
-    static constexpr const char* names[UpscalerCount] = {"off", "fsr3", "fsr4", "taa", "dlss"};
+    static constexpr const char* names[UpscalerCount] = {"off", "fsr3", "taa"};
     return names[std::clamp(upscaler, 0, UpscalerCount - 1)];
 }
 
