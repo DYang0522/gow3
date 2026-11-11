@@ -141,7 +141,7 @@ def save_settings(settings):
     with os.fdopen(fd, 'w', encoding='utf-8') as file:
         file.write(json.dumps(settings, indent=2, ensure_ascii=False))
     try:
-        os.chmod(CONFIG_FILE, 0o600)  # settings saved before the account was
+        os.chmod(CONFIG_FILE, 0o600)  # keep the settings file private
     except OSError:
         pass
 
@@ -196,7 +196,7 @@ def user_folder(s):
     return Path(s["user_dir"]).expanduser() if s["user_dir"] else DATA_DIR / "user"
 
 
-def game_environment(s, log=print):
+def game_environment(s):
     """Environment for the offline Bloodborne run.sh process."""
     env = dict(os.environ)
     env["BB_GAME_DIR"] = str(Path(s["game_dir"]).expanduser())
@@ -681,7 +681,7 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.ini, self.ini_lines = load_ini()
 
     def environment(self):
-        return game_environment(self.settings, log=lambda line: self.append_log(line + "\n"))
+        return game_environment(self.settings)
 
     # --- mods ----------------------------------------------------------------------------
 
