@@ -35,6 +35,7 @@ jobs:
           name: bloodborne-port-native-x86_64
           path: |
             out/bb-probe
+            out/bb-gpu-capabilities
             out/gpu/libbbgpu.so
             out/spartanport-probe
             out/gpu/libspartanportgpu.so

@@ -11,7 +11,7 @@ let
   launcherFiles = [ "launcher/bbport_launcher.py" "launcher/bbport_i18n.py" ];
   wanted = [
     "port/bloodborne/run.sh" "port/bloodborne/run.py"
-    "out" "out/bb-probe" "out/bb-gpu-capabilities" "out/gpu" "out/gpu/libbbgpu.so"
+    "out/bb-probe" "out/bb-gpu-capabilities" "out/gpu/libbbgpu.so"
   ] ++ launcherFiles;
   src = builtins.path {
     name = "bloodborne-port-src";
