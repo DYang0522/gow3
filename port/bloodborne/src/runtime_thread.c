@@ -40,7 +40,7 @@ typedef struct ThreadAttr {
 typedef struct GuestThread {
     /* Guest-visible TCB is allocated separately; this is the ScePthread handle. */
     uint64_t *tcb;
-    uint64_t dtv[8]; /* FreeBSD DTV: slot 0 is generation; slots 1..7 are module blocks. */
+    uint64_t dtv[9]; /* FreeBSD DTV: generation, static-segment count, then module slots 1..7. */
     unsigned char *tls_block;
     pthread_t host;
     GuestEntry entry;
@@ -104,7 +104,8 @@ static void attach(GuestThread *t) {
     uint64_t *tcb=(uint64_t *)(block+offset);
     memset(t->dtv,0,sizeof(t->dtv));
     t->dtv[0]=1;                            /* FreeBSD DTV generation */
-    t->dtv[1]=(uint64_t)(uintptr_t)block;    /* eboot's static TLS (module 1) */
+    t->dtv[1]=1;                            /* One static TLS segment: the eboot. */
+    t->dtv[2]=(uint64_t)(uintptr_t)block;    /* eboot's static TLS (module 1). */
     tcb[0]=(uint64_t)(uintptr_t)tcb;         /* tcb_self */
     tcb[1]=(uint64_t)(uintptr_t)t->dtv;      /* tcb_dtv (per guest thread) */
     tcb[2]=(uint64_t)(uintptr_t)t;           /* tcb_thread */
