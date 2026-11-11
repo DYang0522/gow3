@@ -124,11 +124,11 @@ static ABI int32_t sem_signal(uint32_t id,int32_t count) {
     else if (count<=0 || count>s->maximum-s->count) result=ERR(22);
     else {
         s->count+=count; ++signaled;
-        Waiter **p=&s->first;
-        while (*p) {
-            Waiter *w=*p;
-            if (w->need>s->count) { p=&w->next; continue; }
-            s->count-=w->need; *p=w->next; w->done=1;
+        /* Preserve the queue order: a later, smaller request must not bypass the
+           first waiter merely because the current signal cannot satisfy it. */
+        while (s->first && s->first->need<=s->count) {
+            Waiter *w=s->first;
+            s->count-=w->need; s->first=w->next; w->done=1;
             host_check(pthread_cond_signal(&w->event));
         }
     }
