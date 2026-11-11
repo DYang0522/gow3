@@ -39,7 +39,7 @@ typedef struct ThreadAttr {
 typedef struct GuestThread {
     /* Guest-visible TCB is allocated separately; this is the ScePthread handle. */
     uint64_t *tcb;
-    uint64_t dtv[9]; /* DTV[0] generation; DTV[module+1] is that module's TLS block. */
+    uint64_t dtv[8]; /* FreeBSD DTV: slot 0 is generation; slots 1..7 are module blocks. */
     unsigned char *tls_block;
     pthread_t host;
     GuestEntry entry;
