@@ -316,10 +316,16 @@ static ABI int32_t thread_create(GuestThread **out,ThreadAttr **attr,GuestEntry 
     return create(out,attr,entry,argument,name);
 }
 static ABI int32_t thread_join(GuestThread *t,void **result) {
-    if (!find_thread(t) || t->host_owned) return ERR(3);
+    if (!t) return ERR(3);
     if (t==current) return ERR(11);
-    if (t->detached || t->joined) return ERR(22);
+    pthread_mutex_lock(&lock);
+    GuestThread *found=NULL;
+    for (GuestThread *it=threads;it;it=it->next) if (it==t) { found=it; break; }
+    if (!found || t->host_owned) { pthread_mutex_unlock(&lock); return ERR(3); }
+    if (t->detached || t->joined) { pthread_mutex_unlock(&lock); return ERR(22); }
+    /* Reserve the sole join operation before dropping the registry lock. */
     t->joined=1;
+    pthread_mutex_unlock(&lock);
     void *value=NULL;
     int e=pthread_join(t->host,&value);
     if (e) { fprintf(stderr,"STOP: host pthread_join failed: %d\n",e); exit(21); }
@@ -328,10 +334,20 @@ static ABI int32_t thread_join(GuestThread *t,void **result) {
     return 0;
 }
 static ABI int32_t thread_detach(GuestThread *t) {
-    if (!find_thread(t)) return ERR(3);
-    if (t->detached) return ERR(22);
+    if (!t) return ERR(3);
+    pthread_mutex_lock(&lock);
+    GuestThread *found=NULL;
+    for (GuestThread *it=threads;it;it=it->next) if (it==t) { found=it; break; }
+    if (!found) { pthread_mutex_unlock(&lock); return ERR(3); }
+    if (t->detached || t->joined) { pthread_mutex_unlock(&lock); return ERR(22); }
     t->detached=1;
-    if (!t->host_owned) pthread_detach(t->host);
+    pthread_t host=t->host;
+    int host_owned=t->host_owned;
+    pthread_mutex_unlock(&lock);
+    if (!host_owned) {
+        int e=pthread_detach(host);
+        if (e) { fprintf(stderr,"STOP: host pthread_detach failed: %d\n",e); exit(21); }
+    }
     return 0;
 }
 static ABI __attribute__((noreturn)) void thread_exit(void *value) {
