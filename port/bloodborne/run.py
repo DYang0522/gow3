@@ -365,7 +365,7 @@ def refresh_shared_graphics(env, config):
         pass
     cache = values.get('object_motion_cache') == '1' and \
         values.get('object_motion', '1') == '1' and \
-        values.get('upscaler', 'fsr3') in ('fsr3', 'fsr4')
+        values.get('upscaler', 'fsr3') == 'fsr3'
     env['BB_OBJECT_MOTION_CACHE'] = '1' if cache else '0'
     # Frame rate mode and cap: the launcher and the game's PC Settings page share them.
     if values.get('fps_mode') in ('30', '60', '90', 'uncap'):
@@ -619,7 +619,7 @@ def main():
     if not hold_game_mutex() and not restarted:
         print('Start: another start of the game is being prepared or runs; this one ends')
         return 0
-    # As run.sh: relative paths (BB_GAME_DIR, BB_DATA_DIR, fsr4_shaders/) are from the port.
+    # As run.sh: relative paths (BB_GAME_DIR, BB_DATA_DIR) are from the port.
     os.chdir(PORT)
     env = os.environ
     note = files_note(PORT)
@@ -635,7 +635,6 @@ def main():
     env.setdefault('BB_CONFIG', str(data / 'bbport.ini'))
     config = env['BB_CONFIG']
     refresh_shared_graphics(env, config)
-    env.setdefault('BB_FSR4_DIR', str((data / 'fsr4_shaders').resolve()))
 
     probe = Path(env['BB_PROBE']) if env.get('BB_PROBE') else find_executable('bb-probe.exe')
     if not probe or not probe.is_file():
