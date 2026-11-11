@@ -56,15 +56,8 @@ static uint64_t read64(FILE *f) {
 static size_t round_page(size_t size) { return (size + page_size - 1) & ~(page_size - 1); }
 static void *allocate(size_t size) {
     void *low=runtime_low_map(size,PROT_READ|PROT_WRITE);
-    if (low) return low;
-#ifdef _WIN32
-    void *p = VirtualAlloc(NULL, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-    if (!p) fail("VirtualAlloc failed");
-#else
-    void *p = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (p == MAP_FAILED) fail("mmap failed");
-#endif
-    return p;
+    if (!low) fail("cannot allocate the guest image below 1 TiB");
+    return low;
 }
 static void protect(void *p, size_t size, unsigned flags) {
 #ifdef _WIN32
