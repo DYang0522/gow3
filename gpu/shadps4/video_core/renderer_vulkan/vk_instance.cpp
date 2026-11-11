@@ -679,7 +679,7 @@ bool Instance::CreateDevice() {
             .vertexAttributeInstanceRateDivisor = divisor_features.vertexAttributeInstanceRateDivisor,
         },
         vk::PhysicalDeviceMaintenance5FeaturesKHR{
-            .maintenance5 = true,
+            .maintenance5 = feature_chain.get<vk::PhysicalDeviceMaintenance5FeaturesKHR>().maintenance5,
         },
         vk::PhysicalDevicePipelineBinaryFeaturesKHR{
             .pipelineBinaries = true,
