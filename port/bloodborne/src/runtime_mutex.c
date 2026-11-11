@@ -9,6 +9,9 @@
 #include <time.h>
 typedef struct { int type; } GuestAttr;
 typedef struct { pthread_mutex_t native; } GuestMutex;
+/* These handles live in the low guest-address range; definitions follow the mutex helpers. */
+static void *guest_handle_alloc(size_t size);
+static void guest_handle_free(void *p,size_t size);
 static size_t created, locks, unlocks;
 static int32_t orbis_error(int e) {
     if (!e) return 0;
