@@ -81,7 +81,11 @@ static uint64_t tls_filesz, tls_memsz, tls_align=16;
 static size_t created, joined_count, exited;
 
 void runtime_set_main_tls(const void *data,uint64_t filesz,uint64_t memsz,uint64_t align) {
-    tls_template=data; tls_filesz=filesz; tls_memsz=memsz; tls_align=align ? align : 16;
+    tls_template=data;
+    tls_filesz=filesz;
+    tls_memsz=memsz;
+    /* amd64 FreeBSD TCB alignment is 16 even when PT_TLS requests less. */
+    tls_align=align<16 ? 16 : align;
 }
 static uint64_t tls_offset(void) { return (tls_memsz+tls_align-1)&~(tls_align-1); }
 #ifdef _WIN32
