@@ -53,11 +53,19 @@ class ScanSegmentTests(unittest.TestCase):
         self.assertEqual(s.mode, isa_rewrite.MODE_INT3)
 
     def test_unsupported_encodings(self):
-        for code, why in ((b'\x64' + BEXTR_RIP, 'segment prefix'), (b'\x67' + MOVBE_STORE, '32-bit address'),
-                          (bytes.fromhex('c4e2791310'), 'vcvtph2ps xmm2, [rax]')):
+        for code, why in ((b'\x64' + BEXTR_RIP, 'segment prefix'), (b'\x67' + MOVBE_STORE, '32-bit address')):
             s, = isa_rewrite.scan_segment(code + RET, 0)
             self.assertEqual(s.mode, isa_rewrite.MODE_UNSUPPORTED, why)
-        self.assertEqual(isa_rewrite.scan_segment(bytes.fromhex('c4e2791310') + RET, 0)[0].kind, isa_rewrite.KIND_VCVTPH2PS)
+
+    def test_f16c_register_and_memory_forms_are_supported(self):
+        ph2ps, = isa_rewrite.scan_segment(bytes.fromhex('c4e2791310') + RET, 0)
+        self.assertEqual((ph2ps.kind, ph2ps.width, ph2ps.dst, ph2ps.src1, ph2ps.mem_slot, ph2ps.mode),
+                         (isa_rewrite.KIND_VCVTPH2PS, 128, 2, isa_rewrite.NO_REG, 2, isa_rewrite.MODE_JMP))
+        ps2ph, = isa_rewrite.scan_segment(bytes.fromhex('c4e3791dc100') + RET, 0)
+        self.assertEqual((ps2ph.kind, ps2ph.width, ps2ph.dst, ps2ph.src1, ps2ph.imm8, ps2ph.mode),
+                         (isa_rewrite.KIND_VCVTPS2PH, 128, 0, 1, 0, isa_rewrite.MODE_JMP))
+        ps2ph_round_up, = isa_rewrite.scan_segment(bytes.fromhex('c4e3791dc102') + RET, 0)
+        self.assertEqual(ps2ph_round_up.imm8, 2)
 
     def test_negative_displacement_is_signed(self):
         s, = isa_rewrite.scan_segment(bytes.fromhex('0f38f048f8'), 0)   # movbe ecx, [rax-8]
@@ -128,7 +136,7 @@ class TableTests(unittest.TestCase):
         magic, size, sha, count, unsupported = isa_rewrite.HEADER.unpack_from(table, 0)
         self.assertEqual((magic, size, sha, count, unsupported), (b'G3ISA1\0\0', len(image), hashlib.sha256(image).digest(), 2, 0))
         self.assertEqual(len(table), 64 + 2 * 64)
-        offset, length, kind, width, mode, dst, src1, src2, mem_slot, base, index, scale, flags, disp, original, rl, relocated = \
+        offset, length, kind, width, mode, dst, src1, src2, mem_slot, base, index, scale, flags, imm8, disp, original, rl, relocated = \
             isa_rewrite.RECORD.unpack_from(table, 64 + 64)
         self.assertEqual((offset, length, kind, mode, mem_slot, base, rl, relocated[:rl]),
                          (0x2005, 4, isa_rewrite.KIND_MOVBE_STORE, isa_rewrite.MODE_JMP_RELOCATE, 1, 0, 1, NOP))
@@ -137,7 +145,7 @@ class TableTests(unittest.TestCase):
     def test_encode_table_keeps_negative_displacement(self):
         sites = isa_rewrite.scan_segment(bytes.fromhex('0f38f048f8') + RET, 0)   # movbe ecx, [rax-8]
         record = isa_rewrite.RECORD.unpack_from(isa_rewrite.encode_table(b'', sites), 64)
-        self.assertEqual(record[13], -8)
+        self.assertEqual(record[14], -8)
 
     def test_encode_table_sorts_records_by_offset(self):
         late, early = isa_rewrite.scan_segment(BLSR_ECX, 0x2000) + isa_rewrite.scan_segment(BLSR_ECX, 0x1000)
@@ -148,7 +156,7 @@ class TableTests(unittest.TestCase):
     def test_summary_line(self):
         sites = isa_rewrite.scan_segment(BLSR_ECX + MOVBE_STORE + NOP + bytes.fromhex('c4e2791310') + RET, 0)
         self.assertEqual(isa_rewrite.summary(sites),
-                         'ISA: 3 sites (MOVBE 1, BMI1 1, LZCNT 0, F16C 1); 1 relocated, 0 int3, 1 unsupported')
+                         'ISA: 3 sites (MOVBE 1, BMI1 1, LZCNT 0, F16C 1); 1 relocated, 0 int3, 0 unsupported')
 
     def test_main_writes_table_for_executable_segments_only(self):
         with tempfile.TemporaryDirectory() as tmp:
