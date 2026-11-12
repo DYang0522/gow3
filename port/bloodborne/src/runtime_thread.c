@@ -1,7 +1,8 @@
 /* Guest threads on host pthreads. Each guest thread owns a FreeBSD-style TCB
  * (variant II: static TLS below the TCB). The loader rewrites the eboot's
  * `mov rax, fs:[0]` into `mov rax, gs:[0]`, so GS base = guest TCB while glibc
- * keeps FS. Priorities/affinity are recorded, not enforced by a PS4 scheduler.
+ * keeps FS. Guest priorities are hints; Linux affinity masks are translated to the
+ * process's allowed host CPUs and applied to each pthread.
  * Windows: GS is the TEB and cannot be moved. The guest TCB lives in a TLS slot of the TEB
  * instead, and the loader rewrites the load to `mov rax, gs:[0x1480+8*slot]` (TlsSlots),
  * the same 9-byte instruction with another displacement. */
