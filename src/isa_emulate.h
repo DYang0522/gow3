@@ -1,7 +1,6 @@
-/* Emulation of the guest's MOVBE, BMI1 and LZCNT instructions for hosts that lack them (Sandy and
- * Ivy Bridge, #33, #66). Each G3ISA1 record (scripts/isa_rewrite.py) describes one instruction
- * site; a stub calls isa_emulate with the guest's registers. Built with -mgeneral-regs-only and
- * no libc: it runs inside guest code and must leave the XMM/YMM registers untouched. */
+/* Emulation of the guest's MOVBE, BMI1, LZCNT and F16C instructions for hosts that lack them.
+ * Each G3ISA1 record (scripts/isa_rewrite.py) describes one instruction site. The stub preserves
+ * guest vector state for F16C sites; this code is built -mgeneral-regs-only and uses integer math. */
 #ifndef SPARTAN_ISA_EMULATE_H
 #define SPARTAN_ISA_EMULATE_H
 #include <stdint.h>
@@ -23,7 +22,13 @@ typedef struct {                       /* one G3ISA1 record (spec 4.4), as store
     uint8_t reserved2;
 } IsaSite;
 _Static_assert(sizeof(IsaSite) == 64, "G3ISA1 record");
-typedef struct { uint64_t rflags; uint64_t gpr[16]; } IsaRegs;   /* gpr: x86 numbering; gpr[4] = guest rsp */
+typedef struct {
+    uint64_t rflags;
+    uint64_t gpr[16];                         /* x86 numbering; gpr[4] = guest rsp */
+    uint8_t ymm[16][32];                     /* YMM0..15, low XMM half first */
+    uint32_t mxcsr;
+    uint32_t reserved;
+} IsaRegs;
 enum { ISA_CF = 1u << 0, ISA_ZF = 1u << 6, ISA_SF = 1u << 7, ISA_OF = 1u << 11 };
 /* Memory operands with mem_flags & ISA_MEM_RIP_RELATIVE address image + disp. */
 void isa_emulate_set_image(unsigned char *image);
