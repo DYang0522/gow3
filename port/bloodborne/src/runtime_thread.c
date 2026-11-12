@@ -347,21 +347,31 @@ static void set_host_priority(int prio) {
 #endif
 }
 #ifndef _WIN32
-/* Translate PS4 guest CPU bits through the process cpuset. */
+/* Translate PS4 guest CPU bits through the process's original allowed cpuset. */
+static cpu_set_t host_allowed_cpus;
+static int host_affinity_error;
+static pthread_once_t host_affinity_once=PTHREAD_ONCE_INIT;
+static void host_affinity_init(void) {
+    if (sched_getaffinity(0,sizeof(host_allowed_cpus),&host_allowed_cpus))
+        host_affinity_error=errno;
+}
 static int host_affinity_set(pthread_t thread,uint64_t mask) {
-    if (!mask) return 0;
-    cpu_set_t allowed, selected;
-    CPU_ZERO(&allowed);
-    CPU_ZERO(&selected);
-    int e=pthread_getaffinity_np(thread,sizeof(allowed),&allowed);
+    int e=pthread_once(&host_affinity_once,host_affinity_init);
     if (e) return e;
+    if (host_affinity_error) return host_affinity_error;
+    cpu_set_t selected;
+    CPU_ZERO(&selected);
     int host_cpus[CPU_SETSIZE], count=0;
     for (int cpu=0;cpu<CPU_SETSIZE;++cpu)
-        if (CPU_ISSET(cpu,&allowed)) host_cpus[count++]=cpu;
+        if (CPU_ISSET(cpu,&host_allowed_cpus)) host_cpus[count++]=cpu;
     if (!count) return EINVAL;
-    for (unsigned guest=0;guest<64;++guest)
-        if (mask&(UINT64_C(1)<<guest))
-            CPU_SET(host_cpus[guest%(unsigned)count],&selected);
+    if (!mask) {
+        selected=host_allowed_cpus;
+    } else {
+        for (unsigned guest=0;guest<64;++guest)
+            if (mask&(UINT64_C(1)<<guest))
+                CPU_SET(host_cpus[guest%(unsigned)count],&selected);
+    }
     return pthread_setaffinity_np(thread,sizeof(selected),&selected);
 }
 #endif
