@@ -141,7 +141,7 @@ static void emulate_f16c(const IsaSite *site, IsaRegs *regs) {
     if (site->kind==ISA_VCVTPH2PS) {
         if (site->dst==ISA_NO_REG) return;
         uint8_t *destination=regs->ymm[site->dst];
-        __builtin_memset(destination,0,32);
+        __builtin___builtin_memset(destination,0,32);
         for (unsigned i=0;i<lanes;++i) {
             uint16_t half;
             uint32_t single;
@@ -165,7 +165,7 @@ static void emulate_f16c(const IsaSite *site, IsaRegs *regs) {
             for (unsigned i=0;i<lanes*2;++i) destination[i]=converted[i];
         } else {
             uint8_t *destination=regs->ymm[site->dst];
-            memset(destination,0,32);
+            __builtin_memset(destination,0,32);
             for (unsigned i=0;i<lanes*2;++i) destination[i]=converted[i];
         }
     }
