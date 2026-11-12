@@ -82,6 +82,10 @@ static int record_valid(const IsaSite *s, uint64_t image_size) {
         (s->src1 == ISA_NO_REG) != (s->mem_slot == ISA_MEM_SRC))) return 0;
     if (s->kind == ISA_VCVTPS2PH && (s->src1 == ISA_NO_REG ||
         (s->dst == ISA_NO_REG) != (s->mem_slot == ISA_MEM_DST))) return 0;
+    if (s->kind >= ISA_VCVTPH2PS && (s->src2 != ISA_NO_REG || s->mode == ISA_MODE_INT3 ||
+        s->mode == ISA_MODE_JMP_RELOCATE ||
+        (s->kind == ISA_VCVTPH2PS && s->reserved[0]) ||
+        (s->kind == ISA_VCVTPS2PH && (s->reserved[0] & 0xf0)))) return 0;
     if (s->kind < ISA_VCVTPH2PS && (s->reserved[0] || s->reserved[1] || s->reserved[2] || s->reserved[3])) return 0;
     if (s->reserved[1] || s->reserved[2] || s->reserved[3]) return 0;
     if (s->scale != 1 && s->scale != 2 && s->scale != 4 && s->scale != 8 && !(s->scale == 0 && s->index == ISA_NO_REG))
