@@ -77,6 +77,13 @@ static int record_valid(const IsaSite *s, uint64_t image_size) {
         !register_valid(s->index) || s->mem_slot > ISA_MEM_SRC)
         return 0;
     if (s->kind <= ISA_BLSR && s->width != 16 && s->width != 32 && s->width != 64) return 0;
+    if (s->kind >= ISA_VCVTPH2PS && s->width != 128 && s->width != 256) return 0;
+    if (s->kind == ISA_VCVTPH2PS && (s->dst == ISA_NO_REG || s->mem_slot == ISA_MEM_DST ||
+        (s->src1 == ISA_NO_REG) != (s->mem_slot == ISA_MEM_SRC))) return 0;
+    if (s->kind == ISA_VCVTPS2PH && (s->src1 == ISA_NO_REG ||
+        (s->dst == ISA_NO_REG) != (s->mem_slot == ISA_MEM_DST))) return 0;
+    if (s->kind < ISA_VCVTPH2PS && (s->reserved[0] || s->reserved[1] || s->reserved[2] || s->reserved[3])) return 0;
+    if (s->reserved[1] || s->reserved[2] || s->reserved[3]) return 0;
     if (s->scale != 1 && s->scale != 2 && s->scale != 4 && s->scale != 8 && !(s->scale == 0 && s->index == ISA_NO_REG))
         return 0;
     if (s->mode == ISA_MODE_JMP && s->length < JMP_BYTES) return 0;
@@ -170,6 +177,21 @@ static void emit_rsp_mov(unsigned char **p, uint8_t opcode, int reg, uint8_t dis
 }
 static void emit_mov_store(unsigned char **p, int reg, uint8_t disp) { emit_rsp_mov(p, 0x89, reg, disp); }
 static void emit_mov_load(unsigned char **p, int reg, uint8_t disp) { emit_rsp_mov(p, 0x8b, reg, disp); }
+static void emit_ymm_rsp(unsigned char **p, int store, int reg, uint32_t disp) {
+    if (reg < 8) {
+        emit_u8(p,0xc5); emit_u8(p,0xfe);
+    } else {
+        emit_u8(p,0xc4); emit_u8(p,0x41); emit_u8(p,0x7e);
+    }
+    emit_u8(p,store ? 0x7f : 0x6f);
+    emit_u8(p,(uint8_t)(0x84|((reg&7)<<3)));
+    emit_u8(p,0x24);
+    emit_u32(p,disp);
+}
+static void emit_mxcsr_rsp(unsigned char **p, int store, uint32_t disp) {
+    emit_bytes(p,(const uint8_t[]){0x0f,0xae,(uint8_t)(store ? 0x9c : 0x94),0x24},4);
+    emit_u32(p,disp);
+}
 
 /* rel32 from the byte after a jmp ending at `next` to `target`; 0 when it does not fit. */
 static int rel32_to(const unsigned char *next, const unsigned char *target, int32_t *rel) {
@@ -183,44 +205,53 @@ static int rel32_to(const unsigned char *next, const unsigned char *target, int3
  * jmp back is out of rel32 range. */
 static size_t emit_stub(unsigned char *code, const unsigned char *at, const IsaSite *s, uint64_t *hit,
                         unsigned char *image) {
-    static const uint8_t lea_rsp_down[] = {0x48, 0x8d, 0xa4, 0x24, 0x00, 0xff, 0xff, 0xff};   /* lea rsp,[rsp-0x100] */
-    static const uint8_t lea_rax_rsp_up[] = {0x48, 0x8d, 0x84, 0x24, 0x00, 0x01, 0x00, 0x00}; /* lea rax,[rsp+0x100] */
-    static const uint8_t lea_rsp_up[] = {0x48, 0x8d, 0xa4, 0x24, 0x00, 0x01, 0x00, 0x00};     /* lea rsp,[rsp+0x100] */
-    unsigned char *p = code;
-    emit_bytes(&p, lea_rsp_down, sizeof lea_rsp_down);
-    for (int reg = 0; reg < 16; reg++)
-        if (reg != 4) emit_mov_store(&p, reg, (uint8_t)(8 * reg));
-    emit_bytes(&p, lea_rax_rsp_up, sizeof lea_rax_rsp_up);
-    emit_mov_store(&p, 0, 8 * 4);                                   /* gpr[4] = guest rsp */
-    emit_u8(&p, 0x9c);                                              /* pushfq: rsp = IsaRegs* */
-    emit_bytes(&p, (const uint8_t[]){0x48, 0xb8}, 2);               /* mov rax, &hits[i] */
-    emit_u64(&p, (uint64_t)(uintptr_t)hit);
-    emit_bytes(&p, (const uint8_t[]){0x48, 0xff, 0x00}, 3);         /* inc qword [rax] */
-    emit_bytes(&p, (const uint8_t[]){0x48, 0x89, 0xe5}, 3);         /* mov rbp, rsp */
-    emit_bytes(&p, (const uint8_t[]){0x48, 0x83, 0xe4, 0xf0}, 4);   /* and rsp, -16 */
-    emit_bytes(&p, (const uint8_t[]){0x48, 0xbf}, 2);               /* mov rdi, site */
-    emit_u64(&p, (uint64_t)(uintptr_t)s);
-    emit_bytes(&p, (const uint8_t[]){0x48, 0x89, 0xee}, 3);         /* mov rsi, rbp */
-    emit_bytes(&p, (const uint8_t[]){0x48, 0xb8}, 2);               /* mov rax, isa_emulate */
-    emit_u64(&p, (uint64_t)(uintptr_t)isa_emulate);
-    emit_bytes(&p, (const uint8_t[]){0xff, 0xd0}, 2);               /* call rax */
-    emit_bytes(&p, (const uint8_t[]){0x48, 0x89, 0xec}, 3);         /* mov rsp, rbp */
-    emit_u8(&p, 0x9d);                                              /* popfq: rsp = &gpr[0] */
-    for (int reg = 0; reg < 16; reg++)
-        if (reg != 4) emit_mov_load(&p, reg, (uint8_t)(8 * reg));
-    emit_bytes(&p, lea_rsp_up, sizeof lea_rsp_up);
-    const unsigned char *back = image + s->offset + s->length;
-    if (s->mode == ISA_MODE_JMP_RELOCATE) {
-        emit_bytes(&p, s->relocated, s->relocated_length);
-        back = image + s->offset + 4 + s->relocated_length;
+    const int vector_state=s->kind==ISA_VCVTPH2PS || s->kind==ISA_VCVTPS2PH;
+    const uint32_t frame=vector_state ? 0x300u : 0x100u;
+    unsigned char *p=code;
+    emit_bytes(&p,(const uint8_t[]){0x48,0x8d,0xa4,0x24},4); /* lea rsp,[rsp-frame] */
+    emit_u32(&p,0u-frame);
+    if (vector_state) {
+        for (int reg=0;reg<16;++reg) emit_ymm_rsp(&p,1,reg,0x80u+32u*(unsigned)reg);
+        emit_mxcsr_rsp(&p,1,0x280u);
+    }
+    for (int reg=0;reg<16;++reg)
+        if (reg!=4) emit_mov_store(&p,reg,(uint8_t)(8*reg));
+    emit_bytes(&p,(const uint8_t[]){0x48,0x8d,0x84,0x24},4); /* lea rax,[rsp+frame] */
+    emit_u32(&p,frame);
+    emit_mov_store(&p,0,8*4);                                  /* gpr[4] = guest rsp */
+    emit_u8(&p,0x9c);                                          /* pushfq: rsp = IsaRegs* */
+    emit_bytes(&p,(const uint8_t[]){0x48,0xb8},2);             /* mov rax, &hits[i] */
+    emit_u64(&p,(uint64_t)(uintptr_t)hit);
+    emit_bytes(&p,(const uint8_t[]){0x48,0xff,0x00},3);       /* inc qword [rax] */
+    emit_bytes(&p,(const uint8_t[]){0x48,0x89,0xe5},3);       /* mov rbp, rsp */
+    emit_bytes(&p,(const uint8_t[]){0x48,0x83,0xe4,0xf0},4); /* and rsp, -16 */
+    emit_bytes(&p,(const uint8_t[]){0x48,0xbf},2);             /* mov rdi, site */
+    emit_u64(&p,(uint64_t)(uintptr_t)s);
+    emit_bytes(&p,(const uint8_t[]){0x48,0x89,0xee},3);       /* mov rsi, rbp */
+    emit_bytes(&p,(const uint8_t[]){0x48,0xb8},2);             /* mov rax, isa_emulate */
+    emit_u64(&p,(uint64_t)(uintptr_t)isa_emulate);
+    emit_bytes(&p,(const uint8_t[]){0xff,0xd0},2);             /* call rax */
+    emit_bytes(&p,(const uint8_t[]){0x48,0x89,0xec},3);       /* mov rsp, rbp */
+    if (vector_state) {
+        for (int reg=0;reg<16;++reg) emit_ymm_rsp(&p,0,reg,0x88u+32u*(unsigned)reg);
+        emit_mxcsr_rsp(&p,0,0x288u);
+    }
+    emit_u8(&p,0x9d);                                          /* popfq: rsp = &gpr[0] */
+    for (int reg=0;reg<16;++reg)
+        if (reg!=4) emit_mov_load(&p,reg,(uint8_t)(8*reg));
+    emit_bytes(&p,(const uint8_t[]){0x48,0x8d,0xa4,0x24},4); /* lea rsp,[rsp+frame] */
+    emit_u32(&p,frame);
+    const unsigned char *back=image+s->offset+s->length;
+    if (s->mode==ISA_MODE_JMP_RELOCATE) {
+        emit_bytes(&p,s->relocated,s->relocated_length);
+        back=image+s->offset+4+s->relocated_length;
     }
     int32_t rel;
-    if (!rel32_to(at + (p - code) + JMP_BYTES, back, &rel)) return 0;
-    emit_u8(&p, 0xe9);
-    emit_u32(&p, (uint32_t)rel);
-    return (size_t)(p - code);
+    if (!rel32_to(at+(p-code)+JMP_BYTES,back,&rel)) return 0;
+    emit_u8(&p,0xe9);
+    emit_u32(&p,(uint32_t)rel);
+    return (size_t)(p-code);
 }
-
 /* Site bytes of spec 4.3. */
 static void patch_site(unsigned char *site, const IsaSite *s, int32_t rel) {
     if (s->mode == ISA_MODE_INT3) {
