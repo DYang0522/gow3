@@ -62,6 +62,113 @@ static uint64_t zf_sf(const IsaSite *site, uint64_t result) {
     return (result == 0 ? ISA_ZF : 0) | (result >> (site->width - 1) & 1 ? ISA_SF : 0);
 }
 
+
+/* IEEE-754 binary32 <-> binary16 conversion. No host F16C or floating-point instructions
+ * are used, so this also runs on Sandy Bridge. */
+static uint32_t half_to_float(uint16_t value) {
+    uint32_t sign=(uint32_t)(value&0x8000u)<<16;
+    unsigned exponent=(value>>10)&31u;
+    uint32_t fraction=value&1023u;
+    if (!exponent) {
+        if (!fraction) return sign;
+        int e=-14;
+        while (!(fraction&0x400u)) { fraction<<=1; --e; }
+        fraction&=0x3ffu;
+        return sign|(uint32_t)(e+127)<<23|fraction<<13;
+    }
+    if (exponent==31) return sign|0x7f800000u|fraction<<13;
+    return sign|(uint32_t)((int)exponent-15+127)<<23|fraction<<13;
+}
+
+static int round_up(uint32_t remainder, unsigned shift, uint32_t kept,
+                    unsigned rounding, unsigned sign) {
+    if (!remainder) return 0;
+    switch (rounding) {
+    case 1: return sign != 0;             /* toward -infinity */
+    case 2: return sign == 0;             /* toward +infinity */
+    case 3: return 0;                     /* toward zero */
+    default: {
+        uint32_t halfway=1u<<(shift-1);
+        return remainder>halfway || (remainder==halfway && (kept&1u));
+    }
+    }
+}
+
+static uint16_t overflow_half(unsigned sign, unsigned rounding) {
+    int infinity=rounding==0 || (rounding==1 && sign) || (rounding==2 && !sign);
+    return (uint16_t)((sign<<15)|(infinity ? 0x7c00u : 0x7bffu));
+}
+
+static uint16_t float_to_half(uint32_t value, unsigned rounding) {
+    unsigned sign=value>>31;
+    unsigned exponent=(value>>23)&255u;
+    uint32_t fraction=value&0x7fffffu;
+    if (exponent==255) {
+        if (!fraction) return (uint16_t)((sign<<15)|0x7c00u);
+        uint16_t payload=(uint16_t)(fraction>>13)|0x0200u;
+        return (uint16_t)((sign<<15)|0x7c00u|payload);
+    }
+    if (!exponent) {
+        int away=(rounding==1 && sign) || (rounding==2 && !sign);
+        return (uint16_t)((sign<<15)|(fraction && away ? 1u : 0u));
+    }
+    int e=(int)exponent-112;
+    if (e>=31) return overflow_half(sign,rounding);
+    if (e<=0) {
+        if (e < -10) {
+            int away=(rounding==1 && sign) || (rounding==2 && !sign);
+            return (uint16_t)((sign<<15)|(away ? 1u : 0u));
+        }
+        uint32_t significand=fraction|0x800000u;
+        unsigned shift=(unsigned)(14-e);
+        uint32_t kept=significand>>shift;
+        uint32_t remainder=significand&((1u<<shift)-1u);
+        if (round_up(remainder,shift,kept,rounding,sign)) ++kept;
+        return (uint16_t)((sign<<15)|kept);
+    }
+    uint32_t kept=((uint32_t)e<<10)|(fraction>>13);
+    uint32_t remainder=fraction&0x1fffu;
+    if (round_up(remainder,13,kept,rounding,sign)) ++kept;
+    if (kept>=0x7c00u) return overflow_half(sign,rounding);
+    return (uint16_t)((sign<<15)|kept);
+}
+
+static void emulate_f16c(const IsaSite *site, IsaRegs *regs) {
+    const unsigned lanes=site->width==256 ? 8u : 4u;
+    const unsigned rounding_code=site->reserved[0]&7u;
+    const unsigned rounding=rounding_code==4 ? ((regs->mxcsr>>13)&3u) : rounding_code;
+    const uint8_t *source=site->src1==ISA_NO_REG ? effective_address(site,regs) : regs->ymm[site->src1];
+    if (site->kind==ISA_VCVTPH2PS) {
+        if (site->dst==ISA_NO_REG) return;
+        uint8_t *destination=regs->ymm[site->dst];
+        memset(destination,0,32);
+        for (unsigned i=0;i<lanes;++i) {
+            uint16_t half;
+            uint32_t single;
+            __builtin_memcpy(&half,source+i*2,2);
+            single=half_to_float(half);
+            __builtin_memcpy(destination+i*4,&single,4);
+        }
+        return;
+    }
+    if (site->kind==ISA_VCVTPS2PH) {
+        uint8_t converted[16]={0};
+        for (unsigned i=0;i<lanes;++i) {
+            uint32_t single;
+            uint16_t half;
+            __builtin_memcpy(&single,source+i*4,4);
+            half=float_to_half(single,rounding);
+            __builtin_memcpy(converted+i*2,&half,2);
+        }
+        if (site->dst==ISA_NO_REG) {
+            __builtin_memcpy(effective_address(site,regs),converted,lanes*2);
+        } else {
+            memset(regs->ymm[site->dst],0,32);
+            __builtin_memcpy(regs->ymm[site->dst],converted,lanes*2);
+        }
+    }
+}
+
 uint64_t isa_defined_flags(uint8_t kind) {
     switch (kind) {
     case ISA_ANDN: case ISA_BLSI: case ISA_BLSMSK: case ISA_BLSR: return ISA_SF | ISA_ZF | ISA_CF | ISA_OF;
@@ -72,6 +179,10 @@ uint64_t isa_defined_flags(uint8_t kind) {
 }
 
 void ABI isa_emulate(const IsaSite *site, IsaRegs *regs) {
+    if (site->kind==ISA_VCVTPH2PS || site->kind==ISA_VCVTPS2PH) {
+        emulate_f16c(site,regs);
+        return;
+    }
     uint64_t mask = width_mask(site), defined = isa_defined_flags(site->kind);
     uint64_t width = site->width, source, result, flags;
     switch (site->kind) {
@@ -118,7 +229,7 @@ void ABI isa_emulate(const IsaSite *site, IsaRegs *regs) {
         result = source & (source - 1) & mask;
         flags = zf_sf(site, result) | (source == 0 ? ISA_CF : 0);
         break;
-    default:   /* F16C sites are never applied */
+    default:
         return;
     }
     write_dst(site, regs, result);
