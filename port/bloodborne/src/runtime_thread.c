@@ -352,7 +352,7 @@ static int host_affinity_set(pthread_t thread,uint64_t mask) {
     cpu_set_t allowed, selected;
     CPU_ZERO(&allowed);
     CPU_ZERO(&selected);
-    int e=pthread_getaffinity_np(pthread_self(),sizeof(allowed),&allowed);
+    int e=pthread_getaffinity_np(thread,sizeof(allowed),&allowed);
     if (e) return e;
     int host_cpus[CPU_SETSIZE], count=0;
     for (int cpu=0;cpu<CPU_SETSIZE;++cpu)
