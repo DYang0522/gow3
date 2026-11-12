@@ -269,6 +269,70 @@ static void check_memory_sources(void) {
     }
 }
 
+
+static IsaSite f16c_site(uint8_t kind, uint8_t width) {
+    IsaSite site;
+    memset(&site,0,sizeof site);
+    site.kind=kind; site.width=width; site.dst=0; site.src1=1; site.src2=ISA_NO_REG;
+    site.mem_slot=ISA_MEM_NONE; site.base=site.index=ISA_NO_REG; site.scale=1;
+    return site;
+}
+
+static void check_f16c(void) {
+    IsaRegs regs={0};
+    IsaSite site=f16c_site(ISA_VCVTPH2PS,128);
+    const uint16_t halves[4]={0x3c00,0xc000,0x0001,0x7c00};
+    const uint32_t singles[4]={0x3f800000,0xc0000000,0x33800000,0x7f800000};
+    memcpy(regs.ymm[1],halves,sizeof halves);
+    regs.mxcsr=0x1f80;
+    isa_emulate(&site,&regs);
+    if (memcmp(regs.ymm[0],singles,sizeof singles)) {
+        puts("isa-emulate-test FAILED: VCVTPH2PS conversion"); exit(1);
+    }
+    for (size_t i=sizeof singles;i<sizeof regs.ymm[0];++i)
+        if (regs.ymm[0][i]) { puts("isa-emulate-test FAILED: VCVTPH2PS upper lanes"); exit(1); }
+
+    site=f16c_site(ISA_VCVTPS2PH,128);
+    const uint32_t inputs[4]={0x3f800000,0x477fe000,0x33000000,0x3f801000};
+    const uint16_t nearest[4]={0x3c00,0x7bff,0x0000,0x3c00};
+    memset(&regs,0,sizeof regs); memcpy(regs.ymm[1],inputs,sizeof inputs); regs.mxcsr=0x1f80;
+    isa_emulate(&site,&regs);
+    if (memcmp(regs.ymm[0],nearest,sizeof nearest)) {
+        puts("isa-emulate-test FAILED: VCVTPS2PH nearest-even"); exit(1);
+    }
+    site.reserved[0]=2; /* toward +infinity */
+    isa_emulate(&site,&regs);
+    uint16_t up; memcpy(&up,regs.ymm[0]+6,2);
+    if (up!=0x3c01) { puts("isa-emulate-test FAILED: VCVTPS2PH round-up"); exit(1); }
+    site.reserved[0]=1; /* toward -infinity */
+    uint32_t negative=0xbf801000;
+    memcpy(regs.ymm[1],&negative,4);
+    isa_emulate(&site,&regs);
+    memcpy(&up,regs.ymm[0],2);
+    if (up!=0xbc01) { puts("isa-emulate-test FAILED: VCVTPS2PH round-down"); exit(1); }
+    site.reserved[0]=4; regs.mxcsr=0x1f80|(1u<<13); /* MXCSR round-down */
+    isa_emulate(&site,&regs);
+    memcpy(&up,regs.ymm[0],2);
+    if (up!=0xbc01) { puts("isa-emulate-test FAILED: VCVTPS2PH MXCSR rounding"); exit(1); }
+
+    unsigned char memory[32]={0};
+    memcpy(memory+4,halves,sizeof halves);
+    site=f16c_site(ISA_VCVTPH2PS,128);
+    site.src1=ISA_NO_REG; site.mem_slot=ISA_MEM_SRC; site.base=2; site.disp=4;
+    memset(&regs,0,sizeof regs); regs.gpr[2]=(uintptr_t)memory;
+    isa_emulate(&site,&regs);
+    if (memcmp(regs.ymm[0],singles,sizeof singles)) {
+        puts("isa-emulate-test FAILED: VCVTPH2PS memory source"); exit(1);
+    }
+    site=f16c_site(ISA_VCVTPS2PH,128);
+    site.dst=ISA_NO_REG; site.mem_slot=ISA_MEM_DST; site.base=2; site.disp=4;
+    memset(&regs,0,sizeof regs); regs.gpr[2]=(uintptr_t)memory; memcpy(regs.ymm[1],inputs,sizeof inputs);
+    isa_emulate(&site,&regs);
+    if (memcmp(memory+4,nearest,sizeof nearest)) {
+        puts("isa-emulate-test FAILED: VCVTPS2PH memory destination"); exit(1);
+    }
+}
+
 int main(void) {
     char missing[128];
     if (cpu_missing_rewritable(cpu_feature_words(), missing, sizeof missing) & (CPU_SET_MOVBE | CPU_SET_BMI1 | CPU_SET_LZCNT)) {
@@ -285,6 +349,7 @@ int main(void) {
     check_movbe();
     check_rip_relative();
     check_memory_sources();
+    check_f16c();
     puts("isa-emulate-test ok");
     return 0;
 }
