@@ -22,7 +22,19 @@ let
         || lib.any (dir: rel == dir || lib.hasPrefix (dir + "/") rel) assetDirs
         || lib.any (file: lib.hasPrefix (rel + "/") file) wanted;
   };
-  python = pkgs.python3.withPackages (ps: [ ps.pygobject3 ps.pillow ]);
+  # The Linux launcher decodes the linked executable to build its CPU-instruction rewrite table.
+  # CPython's stable-ABI wheel supports the bundled Python 3.x without compiling Rust in the package.
+  icedX86 = pkgs.python3Packages.buildPythonPackage {
+    pname = "iced-x86";
+    version = "1.21.0";
+    format = "wheel";
+    src = pkgs.fetchurl {
+      url = "https://files.pythonhosted.org/packages/5d/08/054cac5c4f435a243e423323783992c78c7c2f22cf2269fcca145b8423af/iced_x86-1.21.0-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl";
+      hash = "sha256-SJeJN3v8H+QyvSqKV4DJ8+fDW+LmEzsN5UMs2QHK0yw=";
+    };
+    doCheck = false;
+  };
+  python = pkgs.python3.withPackages (ps: [ ps.pygobject3 ps.pillow icedX86 ]);
   # This AppImage targets the user's GCN R9 290X: bundle RADV and RadeonSI only,
   # not every Mesa Vulkan/Gallium driver (Intel, Nouveau, Lavapipe, etc.).
   mesa = pkgs.mesa.override {
