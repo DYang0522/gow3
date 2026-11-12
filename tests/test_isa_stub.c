@@ -343,6 +343,7 @@ static void test_trap_unknown_address(void) {
     IsaTable *t = snippet_table();
     isa_rewrite_apply(t, image, stubs, 0xffffffffu);
     IsaRegs regs, before;
+    memset(&regs,0,sizeof regs);
     for (int i = 0; i < 16; i++) regs.gpr[i] = 0x1111111111111111ull * (uint64_t)(i + 1);
     regs.rflags = 0x202;
     before = regs;
