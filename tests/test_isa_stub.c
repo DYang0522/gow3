@@ -34,7 +34,8 @@ static const uint8_t S5_CODE[] = {0xf3, 0x0f, 0xbd, 0xc7, 0x90, 0x90, 0x90, 0x90
                                   0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0xc3};
 /* andn eax, ecx, edx */
 static const uint8_t ANDN_CODE[] = {0xc4, 0xe2, 0x70, 0xf2, 0xc2};
-enum { ANDN_AT = 0x0e0 };
+enum { ANDN_AT = 0x0e0, F16C_AT = 0x140 };
+static const uint8_t F16C_CODE[] = {0xc4,0xe2,0x79,0x13,0xc1,0xc3}; /* vcvtph2ps xmm0,xmm1; ret */
 
 static unsigned char *region, *image, *stubs;
 static unsigned char pristine[PAGE];
@@ -145,6 +146,10 @@ static void test_adjacent_sites(void) {
     assert(s3(0xf0, NULL) == 0xc0);
 }
 
+#define YMM_LOAD(n) "vmovdqu " #n "*32(%%rbx), %%ymm" #n "\n\t"
+#define YMM_STORE(n) "vmovdqu %%ymm" #n ", " #n "*32(%%rbx)\n\t"
+#define YMM_ALL(op) op(0) op(1) op(2) op(3) op(4) op(5) op(6) op(7) op(8) op(9) op(10) op(11) op(12) op(13) op(14) op(15)
+
 #define XMM_LOAD(n) "movdqu " #n "*16(%%rbx), %%xmm" #n "\n\t"
 #define XMM_STORE(n) "movdqu %%xmm" #n ", " #n "*16(%%rbx)\n\t"
 #define XMM_ALL(op) op(0) op(1) op(2) op(3) op(4) op(5) op(6) op(7) op(8) op(9) op(10) op(11) op(12) op(13) op(14) op(15)
@@ -169,6 +174,35 @@ static void test_xmm_preserved(void) {
                        "xmm14", "xmm15");
     assert((uint64_t)(uintptr_t)fn == 0xe0);
     assert(memcmp(xmm, pattern, sizeof xmm) == 0);
+}
+
+
+static void test_f16c_stub_preserves_ymm(void) {
+    reset_region();
+    IsaSite site=site_at(F16C_AT,5,ISA_VCVTPH2PS,ISA_MODE_JMP,0,1);
+    site.width=128;
+    IsaTable *t=table_of(&site,1);
+    IsaReport report=isa_rewrite_apply(t,image,stubs,CPU_SET_F16C);
+    assert(report.rewritten==1 && report.jmp==1 && report.unsupported_needed==0);
+    unsigned char values[512] __attribute__((aligned(32)));
+    unsigned char pattern[512] __attribute__((aligned(32)));
+    for (int i=0;i<512;++i) pattern[i]=(unsigned char)(i*29+7);
+    memcpy(values,pattern,sizeof values);
+    const uint16_t halves[4]={0x3c00,0xc000,0x0001,0x7c00};
+    memcpy(values+32,halves,sizeof halves);
+    uint64_t fn=(uint64_t)(uintptr_t)(image+F16C_AT);
+    __asm__ volatile(YMM_ALL(YMM_LOAD)
+                     "leaq -128(%%rsp), %%rsp\n\tcall *%%rax\n\tleaq 128(%%rsp), %%rsp\n\t"
+                     YMM_ALL(YMM_STORE)
+                     : "+a"(fn) : "b"(values)
+                     : "rcx","rdx","rsi","rdi","r8","r9","r10","r11","memory","cc",
+                       "ymm0","ymm1","ymm2","ymm3","ymm4","ymm5","ymm6","ymm7",
+                       "ymm8","ymm9","ymm10","ymm11","ymm12","ymm13","ymm14","ymm15");
+    const uint32_t expected[4]={0x3f800000,0xc0000000,0x33800000,0x7f800000};
+    assert(memcmp(values,expected,sizeof expected)==0);
+    for (int i=16;i<32;++i) assert(values[i]==0); /* VEX.128 clears YMM0's upper half */
+    for (int reg=1;reg<16;++reg)
+        assert(memcmp(values+reg*32,pattern+reg*32,32)==0);
 }
 
 static void test_sets_filter(void) {
@@ -434,10 +468,12 @@ int main(int argc, char **argv) {
     memcpy(pristine + S4, S4_CODE, sizeof S4_CODE);
     memcpy(pristine + S5, S5_CODE, sizeof S5_CODE);
     memcpy(pristine + ANDN_AT, ANDN_CODE, sizeof ANDN_CODE);
+    memcpy(pristine + F16C_AT, F16C_CODE, sizeof F16C_CODE);
     test_jmp_site();
     test_relocated_site();
     test_adjacent_sites();
     test_xmm_preserved();
+    test_f16c_stub_preserves_ymm();
     test_sets_filter();
     test_skipped_when_bytes_differ();
     test_table_mismatch();
