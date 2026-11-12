@@ -204,7 +204,12 @@ static ABI int32_t save_umount(const MountPoint *point) {
     int slot=slot_of(point);
     if (slot>=0) { runtime_file_unmount(point->data); slots[slot].used=0; }
     pthread_mutex_unlock(&lock);
-    if (slot>=0) runtime_quit_on_save_done();
+    if (slot>=0) {
+        /* The first save may not exist when runtime_savedata_configure runs. Patch again after
+         * the game has written and unmounted it, so the Bloodborne sound flag is present next load. */
+        bloodborne_sound_hack();
+        runtime_quit_on_save_done();
+    }
     return slot>=0 ? 0 : ERR_NOT_FOUND;
 }
 int runtime_savedata_mounted(void) {
