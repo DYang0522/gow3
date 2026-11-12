@@ -76,7 +76,7 @@ static uint32_t half_to_float(uint16_t value) {
         fraction&=0x3ffu;
         return sign|(uint32_t)(e+127)<<23|fraction<<13;
     }
-    if (exponent==31) return sign|0x7f800000u|fraction<<13;
+    if (exponent==31) return sign|0x7f800000u|(fraction ? (fraction<<13)|0x400000u : 0u);
     return sign|(uint32_t)((int)exponent-15+127)<<23|fraction<<13;
 }
 
