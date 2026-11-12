@@ -14,7 +14,7 @@ enum { ISA_NO_REG = 0xff, ISA_MEM_NONE = 0, ISA_MEM_DST = 1, ISA_MEM_SRC = 2, IS
 typedef struct {                       /* one G3ISA1 record (spec 4.4), as stored in the file */
     uint64_t offset;
     uint8_t length, kind, width, mode, dst, src1, src2, mem_slot, base, index, scale, mem_flags;
-    uint8_t reserved[4];
+    uint8_t reserved[4];                 /* reserved[0] stores VCVTPS2PH imm8 */
     int64_t disp;
     uint8_t original[15];
     uint8_t relocated_length;
