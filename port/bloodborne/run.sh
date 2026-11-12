@@ -98,11 +98,13 @@ fi
 "$PYTHON" scripts/prepare.py "$game" --out "$out"
 "$PYTHON" scripts/link_libc.py "$game" --out "$out"
 "$PYTHON" scripts/link_modules.py "$game" --out "$out"
-# Legacy CPU profile (scripts/cpu_compat.py): bb-probe's CPU check lets such a CPU start.
-if "$PYTHON" -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1])).get("cpu_compat",{}).get("enabled") else 1)' "$out/link.json"; then
-    export BB_CPU_COMPAT=1
+# Build an ISA rewrite table for this exact linked Bloodborne image. The probe applies only the
+# instruction sets missing on the host; a modern CPU leaves the guest instructions untouched.
+isa_args=()
+if "$PYTHON" scripts/isa_rewrite.py "$out/boot-linked.bin" --out "$out"; then
+    isa_args=(--isa-rewrite "$out/isa-rewrite.bin")
 else
-    unset BB_CPU_COMPAT
+    echo 'ISA: rewrite table unavailable; the probe will check whether this CPU needs it.' >&2
 fi
 "$PYTHON" scripts/content_profile.py "$game" --out "$out" --sku "${BB_CONTENT_SKU:-full}"
 # Sizes chosen below for the previous launch are recomputed after an in-game restart.
@@ -187,7 +189,7 @@ else
     bash "$repo_root/build.sh"
     probe="$repo_root/out/bb-probe"
 fi
-probe_args=("$out/boot-linked.bin" --content-profile "$out/content.bin" --patches "$out/patches.bin" --app0 "$game" --user "${BB_USER_DIR:-$data/user}" --timeout "${BB_TIMEOUT:-0}" "$@")
+probe_args=("$out/boot-linked.bin" --content-profile "$out/content.bin" --patches "$out/patches.bin" --app0 "$game" --user "${BB_USER_DIR:-$data/user}" --timeout "${BB_TIMEOUT:-0}" "${isa_args[@]}" "$@")
 if [[ -n ${mod_game:-} ]]; then
     "$probe" "${probe_args[@]}" &
     mod_pid=$!
