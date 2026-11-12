@@ -3,8 +3,8 @@
 scan_segment decodes one executable segment with iced-x86 and classifies each
 site: JMP (5+ bytes, patched with a jump to a stub), JMP_RELOCATE (4 bytes,
 the jump also covers the plain next instruction, copied into the stub), INT3
-(4 bytes, trapped at run time) or UNSUPPORTED (an encoding the stubs do not
-emulate: segment override, LOCK, 32-bit addressing or F16C).
+(4 bytes, trapped at run time) or UNSUPPORTED (segment override, LOCK, or
+32-bit addressing). F16C conversions are emulated in software.
 
 Usage: isa_rewrite.py out/boot-linked.bin --out out
 Reads the G3PROBE5 image, scans its executable segments and writes
@@ -29,7 +29,7 @@ except ImportError:
 MODE_JMP, MODE_JMP_RELOCATE, MODE_INT3, MODE_UNSUPPORTED = range(4)
 NO_REG = 0xFF
 HEADER = struct.Struct('<8sQ32sII8x')                # magic, image size, sha256, sites, unsupported
-RECORD = struct.Struct('<QBBBBBBBBBBBB4xq15sB15sx')  # mirrors IsaSite in the C loader
+RECORD = struct.Struct('<QBBBBBBBBBBBBB3xq15sB15sx')  # mirrors IsaSite; reserved[0] carries imm8
 SET_OF_KIND = {KIND_MOVBE_LOAD: 'MOVBE', KIND_MOVBE_STORE: 'MOVBE', KIND_LZCNT: 'LZCNT',
                KIND_TZCNT: 'BMI1', KIND_ANDN: 'BMI1', KIND_BEXTR: 'BMI1', KIND_BLSI: 'BMI1',
                KIND_BLSMSK: 'BMI1', KIND_BLSR: 'BMI1', KIND_VCVTPH2PS: 'F16C', KIND_VCVTPS2PH: 'F16C'}
@@ -50,6 +50,7 @@ class Site:
     index: int
     scale: int
     mem_flags: int  # bit 0: RIP-relative, disp is the absolute target
+    imm8: int
     disp: int
     original: bytes
     relocated: bytes
@@ -78,11 +79,14 @@ def site_of(ins, kind, original):
             width = width or RegisterExt.size(ins.op_register(i)) * 8
         elif ins.op_kind(i) == OpKind.MEMORY:
             mem_slot = 1 if i == 0 else 2
-    if SET_OF_KIND[kind] == 'F16C':
-        width = 0
+    imm8 = ins.immediate8 if kind == KIND_VCVTPS2PH else 0
+    if kind == KIND_VCVTPH2PS:
+        width = RegisterExt.size(ins.op_register(0)) * 8
+    elif kind == KIND_VCVTPS2PH:
+        width = RegisterExt.size(ins.op_register(1)) * 8
     base = index = NO_REG
     scale = mem_flags = disp = 0
-    unsupported = SET_OF_KIND[kind] == 'F16C' or ins.segment_prefix != Register.NONE or ins.has_lock_prefix
+    unsupported = ins.segment_prefix != Register.NONE or ins.has_lock_prefix
     if mem_slot:
         unsupported |= any(r != Register.NONE and RegisterExt.size(r) != 8 for r in (ins.memory_base, ins.memory_index))
         scale = ins.memory_index_scale
@@ -93,7 +97,7 @@ def site_of(ins, kind, original):
             disp = ins.memory_displacement  # iced reports it as u64; the table stores int64
             disp -= (1 << 64) if disp >= 1 << 63 else 0
     mode = MODE_UNSUPPORTED if unsupported else MODE_JMP if ins.len >= 5 else MODE_INT3
-    return Site(ins.ip, ins.len, kind, width, mode, *regs, mem_slot, base, index, scale, mem_flags, disp, original, b'')
+    return Site(ins.ip, ins.len, kind, width, mode, *regs, mem_slot, base, index, scale, mem_flags, imm8, disp, original, b'')
 
 
 def is_plain(ins, end):
@@ -149,7 +153,7 @@ def encode_table(image, sites):
     table = [HEADER.pack(b'G3ISA1\0\0', len(image), hashlib.sha256(image).digest(), len(sites), unsupported)]
     for s in sorted(sites, key=lambda s: s.offset):   # the C loader rejects records out of order
         table.append(RECORD.pack(s.offset, s.length, s.kind, s.width, s.mode, s.dst, s.src1, s.src2, s.mem_slot,
-                                 s.base, s.index, s.scale, s.mem_flags, s.disp, s.original, len(s.relocated),
+                                 s.base, s.index, s.scale, s.mem_flags, s.imm8, s.disp, s.original, len(s.relocated),
                                  s.relocated))
     return b''.join(table)
 
