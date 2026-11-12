@@ -87,6 +87,8 @@ def site_of(ins, kind, original):
     base = index = NO_REG
     scale = mem_flags = disp = 0
     unsupported = ins.segment_prefix != Register.NONE or ins.has_lock_prefix
+    if kind == KIND_VCVTPS2PH and (imm8 & 7) > 4 or (kind == KIND_VCVTPS2PH and imm8 & 0xf0):
+        unsupported = True
     if mem_slot:
         unsupported |= any(r != Register.NONE and RegisterExt.size(r) != 8 for r in (ins.memory_base, ins.memory_index))
         scale = ins.memory_index_scale
