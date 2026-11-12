@@ -109,6 +109,20 @@ def run_main(argv):
     return code, out.getvalue()
 
 
+def boot_linked_bbprobe6(segments):
+    """Fake BBPROBE6: each linked module has eight 64-bit fields, including TLS alignment."""
+    image = b''.join(code.ljust(size, b'\\0') for code, size, flags in segments)
+    table, address = [], 0
+    for code, size, flags in segments:
+        table.append((address, size, flags))
+        address += size
+    return (struct.pack('<8s6Q', b'BBPROBE6', len(image), 0, len(table), 0, 0, 1)
+            + struct.pack('<Q', 0) + struct.pack('<4Q', 0, 0, 0, 0)
+            + struct.pack('<Q', 1) + struct.pack('<8Q', 0x1000, 0x2000, 0, 0, 0, 0, 0, 16)
+            + struct.pack('<Q', 0)
+            + b''.join(struct.pack('<3Q', *t) for t in table) + image)
+
+
 class ReadBootLinkedTests(unittest.TestCase):
     def test_read_boot_linked_returns_segments_and_image(self):
         data = boot_linked([(BLSR_ECX + RET, 0x1000, 5), (b'data', 0x2000, 6)])
@@ -117,9 +131,15 @@ class ReadBootLinkedTests(unittest.TestCase):
         self.assertEqual(len(image), 0x3000)
         self.assertEqual((image[:6], image[0x1000:0x1004]), (BLSR_ECX + RET, b'data'))
 
+    def test_read_bbprobe6_skips_64_byte_module_records(self):
+        data = boot_linked_bbprobe6([(BLSR_ECX + RET, 0x1000, 5)])
+        segments, image = isa_rewrite.read_boot_linked(data)
+        self.assertEqual(segments, [(0, 0x1000, 5)])
+        self.assertEqual((len(image), image[:len(BLSR_ECX + RET)]), (0x1000, BLSR_ECX + RET))
+
     def test_read_boot_linked_rejects_bad_magic_and_truncation(self):
         data = boot_linked([(RET, 0x1000, 5)])
-        with self.assertRaisesRegex(ValueError, 'not a G3PROBE5 image'):
+        with self.assertRaisesRegex(ValueError, 'not a supported linked probe image'):
             isa_rewrite.read_boot_linked(b'G3PROBE4' + data[8:])
         with self.assertRaisesRegex(ValueError, 'out of bounds'):
             isa_rewrite.read_boot_linked(data[:-1])
