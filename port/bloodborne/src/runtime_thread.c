@@ -345,11 +345,33 @@ static void set_host_priority(int prio) {
     (void)prio;
 #endif
 }
+#ifndef _WIN32
+/* Translate PS4 guest CPU bits through the process cpuset. */
+static int host_affinity_set(pthread_t thread,uint64_t mask) {
+    if (!mask) return 0;
+    cpu_set_t allowed, selected;
+    CPU_ZERO(&allowed);
+    CPU_ZERO(&selected);
+    int e=pthread_getaffinity_np(pthread_self(),sizeof(allowed),&allowed);
+    if (e) return e;
+    int host_cpus[CPU_SETSIZE], count=0;
+    for (int cpu=0;cpu<CPU_SETSIZE;++cpu)
+        if (CPU_ISSET(cpu,&allowed)) host_cpus[count++]=cpu;
+    if (!count) return EINVAL;
+    for (unsigned guest=0;guest<64;++guest)
+        if (mask&(UINT64_C(1)<<guest))
+            CPU_SET(host_cpus[guest%(unsigned)count],&selected);
+    return pthread_setaffinity_np(thread,sizeof(selected),&selected);
+}
+#endif
 static void *host_start(void *p) {
     GuestThread *t=p;
     attach(t);
     set_host_name(t->name);
     set_host_priority(t->attr.prio);
+#ifndef _WIN32
+    (void)host_affinity_set(pthread_self(),t->attr.affinity);
+#endif
     if (!exit_setjmp(t)) t->result=t->entry(t->argument);
     runtime_thread_keys_cleanup();
     runtime_rwlock_thread_cleanup();
@@ -495,7 +517,12 @@ static ABI int32_t thread_set_prio(GuestThread *t,int prio) {
 }
 static ABI int32_t thread_set_affinity(GuestThread *t,uint64_t mask) {
     if (!find_thread(t)) return ERR(3);
-    t->attr.affinity=mask; return 0;
+    t->attr.affinity=mask;
+#ifndef _WIN32
+    int e=host_affinity_set(t->host,mask);
+    if (e) return thread_error(e);
+#endif
+    return 0;
 }
 static ABI int32_t thread_get_affinity(GuestThread *t,uint64_t *mask) {
     if (!find_thread(t)) return ERR(3);
