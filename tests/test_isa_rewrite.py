@@ -66,6 +66,9 @@ class ScanSegmentTests(unittest.TestCase):
                          (isa_rewrite.KIND_VCVTPS2PH, 128, 0, 1, 0, isa_rewrite.MODE_JMP))
         ps2ph_round_up, = isa_rewrite.scan_segment(bytes.fromhex('c4e3791dc102') + RET, 0)
         self.assertEqual(ps2ph_round_up.imm8, 2)
+        ps2ph_memory, = isa_rewrite.scan_segment(bytes.fromhex('c4e3791d0800') + RET, 0)
+        self.assertEqual((ps2ph_memory.width, ps2ph_memory.dst, ps2ph_memory.src1, ps2ph_memory.mem_slot,
+                          ps2ph_memory.mode), (128, isa_rewrite.NO_REG, 1, 1, isa_rewrite.MODE_JMP))
 
     def test_negative_displacement_is_signed(self):
         s, = isa_rewrite.scan_segment(bytes.fromhex('0f38f048f8'), 0)   # movbe ecx, [rax-8]
@@ -141,6 +144,11 @@ class TableTests(unittest.TestCase):
         self.assertEqual((offset, length, kind, mode, mem_slot, base, rl, relocated[:rl]),
                          (0x2005, 4, isa_rewrite.KIND_MOVBE_STORE, isa_rewrite.MODE_JMP_RELOCATE, 1, 0, 1, NOP))
         self.assertEqual(original[:length], MOVBE_STORE)
+
+    def test_encode_table_preserves_f16c_rounding_immediate(self):
+        site, = isa_rewrite.scan_segment(bytes.fromhex('c4e3791dc102') + RET, 0)
+        record = isa_rewrite.RECORD.unpack_from(isa_rewrite.encode_table(b'', [site]), 64)
+        self.assertEqual(record[13], 2)
 
     def test_encode_table_keeps_negative_displacement(self):
         sites = isa_rewrite.scan_segment(bytes.fromhex('0f38f048f8') + RET, 0)   # movbe ecx, [rax-8]
