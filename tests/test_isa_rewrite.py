@@ -208,7 +208,7 @@ class TableTests(unittest.TestCase):
             bad, short = Path(tmp) / 'bad.bin', Path(tmp) / 'short.bin'
             bad.write_bytes(b'G3PROBE4' + bytes(64))
             short.write_bytes(boot_linked([(RET, 0x1000, 5)])[:-1])
-            for path, reason in ((Path(tmp) / 'missing.bin', ''), (bad, 'not a G3PROBE5 image'), (short, 'out of bounds')):
+            for path, reason in ((Path(tmp) / 'missing.bin', ''), (bad, 'not a supported linked probe image'), (short, 'out of bounds')):
                 code, out = run_main([str(path), '--out', tmp])
                 self.assertEqual(code, 1, path.name)
                 self.assertTrue(out.startswith('ISA: rewrite table unavailable (' + reason), out)
