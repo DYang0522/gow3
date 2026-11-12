@@ -18,7 +18,7 @@ typedef struct {
 } IsaTable;
 /* rewritten = jmp + relocated + int3; skipped and unsupported_needed are outside it. */
 typedef struct { uint32_t rewritten, jmp, relocated, int3, skipped, unsupported_needed; } IsaReport;
-enum { ISA_STUB_BYTES = 256 };
+enum { ISA_STUB_BYTES = 640 };
 
 /* Parses a G3ISA1 file (spec 4.4). NULL and one stderr line ("ISA: <reason>") when invalid. */
 IsaTable *isa_table_load(const char *path);
