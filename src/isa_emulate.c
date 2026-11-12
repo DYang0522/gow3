@@ -140,13 +140,12 @@ static void emulate_f16c(const IsaSite *site, IsaRegs *regs) {
     const uint8_t *source=site->src1==ISA_NO_REG ? effective_address(site,regs) : regs->ymm[site->src1];
     if (site->kind==ISA_VCVTPH2PS) {
         if (site->dst==ISA_NO_REG) return;
+        uint16_t halves[8];
+        for (unsigned i=0;i<lanes;++i) __builtin_memcpy(&halves[i],source+i*2,2);
         uint8_t *destination=regs->ymm[site->dst];
         __builtin_memset(destination,0,32);
         for (unsigned i=0;i<lanes;++i) {
-            uint16_t half;
-            uint32_t single;
-            __builtin_memcpy(&half,source+i*2,2);
-            single=half_to_float(half);
+            uint32_t single=half_to_float(halves[i]);
             __builtin_memcpy(destination+i*4,&single,4);
         }
         return;
