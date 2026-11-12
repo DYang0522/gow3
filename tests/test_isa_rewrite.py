@@ -111,7 +111,7 @@ def run_main(argv):
 
 def boot_linked_bbprobe6(segments):
     """Fake BBPROBE6: each linked module has eight 64-bit fields, including TLS alignment."""
-    image = b''.join(code.ljust(size, b'\\0') for code, size, flags in segments)
+    image = b''.join(code.ljust(size, b'\0') for code, size, flags in segments)
     table, address = [], 0
     for code, size, flags in segments:
         table.append((address, size, flags))
