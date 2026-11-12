@@ -337,6 +337,24 @@ static void check_f16c(void) {
     if (memcmp(memory+4,nearest,sizeof nearest)) {
         puts("isa-emulate-test FAILED: VCVTPS2PH memory destination"); exit(1);
     }
+
+    const uint16_t halves256[8]={0x3c00,0xc000,0x0001,0x7c00,0x0000,0x8000,0x7bff,0xfc00};
+    const uint32_t singles256[8]={0x3f800000,0xc0000000,0x33800000,0x7f800000,
+                                  0x00000000,0x80000000,0x477fe000,0xff800000};
+    site=f16c_site(ISA_VCVTPH2PS,256);
+    memset(&regs,0,sizeof regs); memcpy(regs.ymm[1],halves256,sizeof halves256);
+    isa_emulate(&site,&regs);
+    if (memcmp(regs.ymm[0],singles256,sizeof singles256)) {
+        puts("isa-emulate-test FAILED: 256-bit VCVTPH2PS"); exit(1);
+    }
+    site=f16c_site(ISA_VCVTPS2PH,256);
+    memset(&regs,0,sizeof regs); memcpy(regs.ymm[1],singles256,sizeof singles256);
+    isa_emulate(&site,&regs);
+    if (memcmp(regs.ymm[0],halves256,sizeof halves256)) {
+        puts("isa-emulate-test FAILED: 256-bit VCVTPS2PH"); exit(1);
+    }
+    for (size_t i=sizeof halves256;i<sizeof regs.ymm[0];++i)
+        if (regs.ymm[0][i]) { puts("isa-emulate-test FAILED: VCVTPS2PH upper lanes"); exit(1); }
 }
 
 int main(void) {
