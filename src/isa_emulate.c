@@ -164,8 +164,9 @@ static void emulate_f16c(const IsaSite *site, IsaRegs *regs) {
             uint8_t *destination=effective_address(site,regs);
             for (unsigned i=0;i<lanes*2;++i) destination[i]=converted[i];
         } else {
-            memset(regs->ymm[site->dst],0,32);
-            __builtin_memcpy(regs->ymm[site->dst],converted,lanes*2);
+            uint8_t *destination=regs->ymm[site->dst];
+            memset(destination,0,32);
+            for (unsigned i=0;i<lanes*2;++i) destination[i]=converted[i];
         }
     }
 }
