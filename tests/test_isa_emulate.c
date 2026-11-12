@@ -291,6 +291,12 @@ static void check_f16c(void) {
     }
     for (size_t i=sizeof singles;i<sizeof regs.ymm[0];++i)
         if (regs.ymm[0][i]) { puts("isa-emulate-test FAILED: VCVTPH2PS upper lanes"); exit(1); }
+    site=f16c_site(ISA_VCVTPH2PS,128); site.dst=1; site.src1=1;
+    memset(&regs,0,sizeof regs); memcpy(regs.ymm[1],halves,sizeof halves);
+    isa_emulate(&site,&regs);
+    if (memcmp(regs.ymm[1],singles,sizeof singles)) {
+        puts("isa-emulate-test FAILED: VCVTPH2PS aliased operands"); exit(1);
+    }
 
     site=f16c_site(ISA_VCVTPS2PH,128);
     const uint32_t inputs[4]={0x3f800000,0x477fe000,0x33000000,0x3f801000};
