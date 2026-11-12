@@ -237,7 +237,7 @@ static void test_table_load_fixture(const char *path) {
     assert(t->sites[0].kind == ISA_BLSR);
     assert(t->sites[1].mode == ISA_MODE_JMP_RELOCATE);
     assert(t->sites[5].mode == ISA_MODE_INT3);
-    assert(isa_stub_area_size(t) == 6 * 256);
+    assert(isa_stub_area_size(t) == 6 * ISA_STUB_BYTES);
     assert(isa_site_set(&t->sites[0]) == CPU_SET_BMI1);
     assert(isa_site_set(&t->sites[1]) == CPU_SET_MOVBE);
 }
@@ -322,9 +322,9 @@ static void test_site_of_stub(void) {
     reset_region();
     IsaTable *t = snippet_table();
     isa_rewrite_apply(t, image, stubs, 0xffffffffu);
-    assert(isa_rewrite_site_of_stub(t, (uintptr_t)stubs + 256 + 10) == 1);
+    assert(isa_rewrite_site_of_stub(t, (uintptr_t)stubs + ISA_STUB_BYTES + 10) == 1);
     assert(isa_rewrite_site_of_stub(t, (uintptr_t)stubs - 1) == -1);
-    assert(isa_rewrite_site_of_stub(t, (uintptr_t)stubs + t->count * 256) == -1);
+    assert(isa_rewrite_site_of_stub(t, (uintptr_t)stubs + t->count * ISA_STUB_BYTES) == -1);
 }
 
 static void test_report_top_sites(void) {
