@@ -63,14 +63,14 @@ class ScanSegmentTests(unittest.TestCase):
                          (isa_rewrite.KIND_VCVTPH2PS, 128, 2, isa_rewrite.NO_REG, 2, isa_rewrite.MODE_JMP))
         ph2ps_256, = isa_rewrite.scan_segment(bytes.fromhex('c4e27d13d1') + RET, 0)
         self.assertEqual((ph2ps_256.width, ph2ps_256.dst, ph2ps_256.src1), (256, 2, 1))
-        ps2ph, = isa_rewrite.scan_segment(bytes.fromhex('c4e3791dc100') + RET, 0)
+        ps2ph, = isa_rewrite.scan_segment(bytes.fromhex('c4e3791dc800') + RET, 0)
         self.assertEqual((ps2ph.kind, ps2ph.width, ps2ph.dst, ps2ph.src1, ps2ph.imm8, ps2ph.mode),
                          (isa_rewrite.KIND_VCVTPS2PH, 128, 0, 1, 0, isa_rewrite.MODE_JMP))
-        ps2ph_round_up, = isa_rewrite.scan_segment(bytes.fromhex('c4e3791dc102') + RET, 0)
+        ps2ph_round_up, = isa_rewrite.scan_segment(bytes.fromhex('c4e3791dc802') + RET, 0)
         self.assertEqual(ps2ph_round_up.imm8, 2)
-        ps2ph_256, = isa_rewrite.scan_segment(bytes.fromhex('c4e37d1dc100') + RET, 0)
+        ps2ph_256, = isa_rewrite.scan_segment(bytes.fromhex('c4e37d1dc800') + RET, 0)
         self.assertEqual((ps2ph_256.width, ps2ph_256.dst, ps2ph_256.src1), (256, 0, 1))
-        reserved_rounding, = isa_rewrite.scan_segment(bytes.fromhex('c4e3791dc105') + RET, 0)
+        reserved_rounding, = isa_rewrite.scan_segment(bytes.fromhex('c4e3791dc805') + RET, 0)
         self.assertEqual(reserved_rounding.mode, isa_rewrite.MODE_UNSUPPORTED)
         ps2ph_memory, = isa_rewrite.scan_segment(bytes.fromhex('c4e3791d0800') + RET, 0)
         self.assertEqual((ps2ph_memory.width, ps2ph_memory.dst, ps2ph_memory.src1, ps2ph_memory.mem_slot,
@@ -172,7 +172,7 @@ class TableTests(unittest.TestCase):
         self.assertEqual(original[:length], MOVBE_STORE)
 
     def test_encode_table_preserves_f16c_rounding_immediate(self):
-        site, = isa_rewrite.scan_segment(bytes.fromhex('c4e3791dc102') + RET, 0)
+        site, = isa_rewrite.scan_segment(bytes.fromhex('c4e3791dc802') + RET, 0)
         record = isa_rewrite.RECORD.unpack_from(isa_rewrite.encode_table(b'', [site]), 64)
         self.assertEqual(record[13], 2)
 
