@@ -1,4 +1,4 @@
-/* isa_emulate (src/isa_emulate.c) against the host's own MOVBE, BMI1 and LZCNT instructions. */
+/* isa_emulate (src/isa_emulate.c): native MOVBE/BMI1/LZCNT comparisons and software F16C tests. */
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
