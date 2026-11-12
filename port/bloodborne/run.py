@@ -783,10 +783,12 @@ def main():
         # Build the same instruction-rewrite table used by SpartanPort. It is tied to
         # this exact linked Bloodborne image; the loader applies only the missing CPU sets.
         isa_args = []
-        code, output = run_script('isa_rewrite.py', out / 'boot-linked.bin', '--out', out,
-                                  capture=True, check=False)
-        print(output, end='', flush=True)
-        if code == 0:
+        output = run_script('isa_rewrite.py', out / 'boot-linked.bin', '--out', out,
+                            capture=True, optional=True)
+        if output is None:
+            print('ISA: rewrite table unavailable; the probe will check whether this CPU needs it')
+        else:
+            print(output, end='', flush=True)
             isa_args = ['--isa-rewrite', str(out / 'isa-rewrite.bin')]
         run_script('content_profile.py', game, '--out', out, '--sku', env.get('BB_CONTENT_SKU', 'full'))
 
