@@ -7,7 +7,7 @@ the jump also covers the plain next instruction, copied into the stub), INT3
 32-bit addressing). F16C conversions are emulated in software.
 
 Usage: isa_rewrite.py out/boot-linked.bin --out out
-Reads the G3PROBE5 image, scans its executable segments and writes
+Reads the linked G3PROBE5/BBPROBE5/BBPROBE6 image, scans its executable segments and writes
 <out>/isa-rewrite.bin (format G3ISA1: HEADER, then one RECORD per site).
 """
 import argparse
@@ -136,13 +136,14 @@ def scan_segment(code, address):
 
 
 def read_boot_linked(data):
-    """Segments (address, size, flags) and image of a G3PROBE5 or BBPROBE5 file, in link_modules.py's order."""
+    """Return executable segments and image from a linked G3PROBE5, BBPROBE5 or BBPROBE6 file."""
     magic, size, entry, ns, nr, ni, flags = unpack('<8s6Q', data, 0)
-    if magic not in (b'G3PROBE5', b'BBPROBE5'):
+    if magic not in (b'G3PROBE5', b'BBPROBE5', b'BBPROBE6'):
         raise ValueError('not a supported linked probe image')
     pos = 56 + 8 + 32   # header, procparam, main TLS
     nmodules, = unpack('<Q', data, pos)
-    pos += 8 + nmodules * 56
+    module_record_size = 64 if magic == b'BBPROBE6' else 56
+    pos += 8 + nmodules * module_record_size
     nbindings, = unpack('<Q', data, pos)
     pos += 8 + nbindings * 24
     segments = [unpack('<3Q', data, pos + i * 24) for i in range(ns)]
